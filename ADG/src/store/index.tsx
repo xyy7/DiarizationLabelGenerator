@@ -22,7 +22,8 @@ type Action =
   | { type: 'SET_DURATION'; duration: number }
   | { type: 'SET_PLAYBACK_RATE'; rate: number }
   | { type: 'SET_VOLUME'; volume: number }
-  | { type: 'LOAD_PROJECT'; project: Project };
+  | { type: 'LOAD_PROJECT'; project: Project }
+  | { type: 'CREATE_CLIP_PROJECT'; project: Project };
 
 const initialState: AppState = {
   project: null,
@@ -229,6 +230,9 @@ const appReducer = (state: AppState, action: Action): AppState => {
       return { ...state, volume: action.volume };
 
     case 'LOAD_PROJECT':
+      return { ...state, project: action.project };
+
+    case 'CREATE_CLIP_PROJECT':
       return { ...state, project: action.project };
 
     default:
