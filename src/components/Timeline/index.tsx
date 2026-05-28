@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Popconfirm, Tooltip } from 'antd';
-import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Tag } from 'antd';
+import { DeleteOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { Label, Channel } from '../../types';
 import { useAppContext } from '../../store';
 
@@ -22,6 +22,9 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
+  const [labelSettingsModalVisible, setLabelSettingsModalVisible] = useState(false);
+  const [currentEditingLabel, setCurrentEditingLabel] = useState<Label | null>(null);
+  const [form] = Form.useForm();
 
   const getTimeFromX = (x: number): number => {
     if (!containerRef.current) return 0;
@@ -143,10 +146,51 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
     }
   };
 
+  const openLabelSettings = (e: React.MouseEvent, label: Label) => {
+    e.stopPropagation();
+    setCurrentEditingLabel(label);
+    form.setFieldsValue({
+      text: label.text,
+      startTime: label.startTime,
+      endTime: label.endTime,
+    });
+    setLabelSettingsModalVisible(true);
+  };
+
+  const saveLabelSettings = () => {
+    form.validateFields().then((values) => {
+      if (currentEditingLabel) {
+        dispatch({
+          type: 'UPDATE_LABEL',
+          channelId: channel.id,
+          labelId: currentEditingLabel.id,
+          updates: {
+            text: values.text,
+            startTime: values.startTime,
+            endTime: values.endTime,
+          },
+        });
+      }
+      setLabelSettingsModalVisible(false);
+    });
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent, label: Label) => {
+    e.stopPropagation();
+    openLabelSettings(e, label);
+  };
+
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const formatDetailedTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${mins}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   };
 
   return (
@@ -204,6 +248,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
                 minWidth: 40,
               }}
               onMouseDown={(e) => startDrag(e, label.id, 'move', label)}
+              onDoubleClick={(e) => handleDoubleClick(e, label)}
             >
               <div
                 style={{
@@ -254,7 +299,15 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
               )}
 
               <div style={{ position: 'absolute', right: 20, top: 2, display: 'flex', gap: 4 }}>
-                <Tooltip title="编辑">
+                <Tooltip title="标签设置">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<SettingOutlined style={{ color: 'white', fontSize: 12 }} />}
+                    onClick={(e) => openLabelSettings(e, label)}
+                  />
+                </Tooltip>
+                <Tooltip title="编辑文字">
                   <Button
                     type="text"
                     size="small"
@@ -286,9 +339,60 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
                   />
                 </Popconfirm>
               </div>
+
+              <div style={{ position: 'absolute', bottom: -18, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: '#999' }}>
+                <Tag color={channel.color} style={{ fontSize: 10, margin: 0 }}>
+                  {formatDetailedTime(label.startTime)} - {formatDetailedTime(label.endTime)}
+                </Tag>
+              </div>
             </div>
           ))}
       </div>
+
+      <Modal
+        title="标签设置"
+        open={labelSettingsModalVisible}
+        onOk={saveLabelSettings}
+        onCancel={() => setLabelSettingsModalVisible(false)}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item
+            name="text"
+            label="标签文字"
+            rules={[{ required: true, message: '请输入标签文字' }]}
+          >
+            <Input placeholder="请输入标签文字" />
+          </Form.Item>
+          <Form.Item
+            name="startTime"
+            label="开始时间 (秒)"
+            rules={[{ required: true, message: '请输入开始时间' }]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              max={duration}
+              step={0.01}
+              precision={2}
+              placeholder="开始时间"
+            />
+          </Form.Item>
+          <Form.Item
+            name="endTime"
+            label="结束时间 (秒)"
+            rules={[{ required: true, message: '请输入结束时间' }]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              max={duration}
+              step={0.01}
+              precision={2}
+              placeholder="结束时间"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };
