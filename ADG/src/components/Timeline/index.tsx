@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Space, Input as AntInput, message } from 'antd';
-import { DeleteOutlined, EditOutlined, SettingOutlined, ScissorOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Space, Input as AntInput, message, Slider } from 'antd';
+import { DeleteOutlined, EditOutlined, SettingOutlined, ScissorOutlined, PlayCircleOutlined, PauseCircleOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import { Label, Channel, Subtitle } from '../../types';
 import { useAppContext } from '../../store';
@@ -16,6 +16,7 @@ interface TimelineProps {
 const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, currentAudioFile, onPlaySegment }) => {
   const { dispatch, state } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'start' | 'end' | 'move' | null>(null);
   const [dragItemType, setDragItemType] = useState<'label' | 'subtitle' | null>(null);
@@ -33,18 +34,52 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
   const [clipModalVisible, setClipModalVisible] = useState(false);
   const [clipStart, setClipStart] = useState(0);
   const [clipEnd, setClipEnd] = useState(duration || 10);
+  const [zoom, setZoom] = useState(1); // 1 = 100%
+  const [scrollX, setScrollX] = useState(0);
+  const [viewWidth, setViewWidth] = useState(800); // 默认视口宽度
+
+  // 计算缩放后的时间轴总宽度
+  const getTimelineWidth = () => {
+    return viewWidth * zoom;
+  };
 
   const getTimeFromX = (x: number): number => {
-    if (!containerRef.current) return 0;
-    const rect = containerRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min(duration, (x / rect.width) * duration));
+    const timelineWidth = getTimelineWidth();
+    return Math.max(0, Math.min(duration, ((x + scrollX) / timelineWidth) * duration));
   };
 
   const getXFromTime = (time: number): number => {
-    if (!containerRef.current) return 0;
-    const rect = containerRef.current.getBoundingClientRect();
-    return (time / duration) * rect.width;
+    const timelineWidth = getTimelineWidth();
+    return (time / duration) * timelineWidth - scrollX;
   };
+
+  // 缩放控制
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(10, prev * 1.2));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(0.2, prev / 1.2));
+  };
+
+  const handleZoomReset = () => {
+    setZoom(1);
+    setScrollX(0);
+  };
+
+  // 监听容器宽度变化
+  useEffect(() => {
+    const updateViewWidth = () => {
+      if (scrollContainerRef.current) {
+        const rect = scrollContainerRef.current.getBoundingClientRect();
+        setViewWidth(rect.width);
+      }
+    };
+
+    updateViewWidth();
+    window.addEventListener('resize', updateViewWidth);
+    return () => window.removeEventListener('resize', updateViewWidth);
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
@@ -480,41 +515,121 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
 
   return (
     <div>
+      {/* 缩放控制栏 */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+        padding: '4px 8px',
+        background: '#fafafa',
+        borderRadius: 4,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tooltip title="缩小">
+            <Button
+              type="text"
+              icon={<ZoomOutOutlined />}
+              onClick={handleZoomOut}
+              disabled={zoom <= 0.2}
+            />
+          </Tooltip>
+          <span style={{ fontSize: 12, color: '#666', minWidth: 60, textAlign: 'center' }}>
+            {Math.round(zoom * 100)}%
+          </span>
+          <Tooltip title="放大">
+            <Button
+              type="text"
+              icon={<ZoomInOutlined />}
+              onClick={handleZoomIn}
+              disabled={zoom >= 10}
+            />
+          </Tooltip>
+          <Tooltip title="重置缩放">
+            <Button
+              type="text"
+              size="small"
+              onClick={handleZoomReset}
+              style={{ fontSize: 12 }}
+            >
+              重置
+            </Button>
+          </Tooltip>
+        </div>
+        <div style={{ fontSize: 11, color: '#999' }}>
+          提示：放大后可滚动查看更多细节
+        </div>
+      </div>
+
+      {/* 滚动容器 */}
       <div
-        ref={containerRef}
+        ref={scrollContainerRef}
         style={{
-          position: 'relative',
-          height: 100,
-          background: '#f0f0f0',
+          width: '100%',
+          overflowX: 'auto',
+          overflowY: 'visible',
           borderRadius: 8,
-          cursor: 'crosshair',
-          overflow: 'visible',
-          padding: '4px 0',
+          marginBottom: 4,
         }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}
       >
-        {/* 时间轴刻度线 */}
-        {Array.from({ length: Math.ceil(duration / 5) + 1 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: `${getXFromTime(i * 5)}px`,
-              bottom: 0,
-              width: 1,
-              background: '#ddd',
-              zIndex: 1,
-            }}
-          >
-            <div style={{ fontSize: 10, color: '#999', marginTop: -18, marginLeft: 2 }}>
-              {i * 5}
-            </div>
-          </div>
-        ))}
+        <div
+          ref={containerRef}
+          style={{
+            position: 'relative',
+            width: getTimelineWidth(),
+            height: 100,
+            background: '#f0f0f0',
+            borderRadius: 8,
+            cursor: 'crosshair',
+            overflow: 'visible',
+            padding: '4px 0',
+            minWidth: viewWidth,
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          {/* 时间轴刻度线 - 根据缩放动态调整密度 */}
+          {(() => {
+            // 根据缩放比例调整刻度间隔
+            let interval = 5;
+            if (zoom >= 2) interval = 1;
+            else if (zoom >= 5) interval = 0.5;
+            else if (zoom >= 8) interval = 0.1;
+            
+            const maxTick = Math.ceil(duration / interval) + 1;
+            return Array.from({ length: maxTick }).map((_, i) => {
+              const time = i * interval;
+              const x = getXFromTime(time);
+              
+              // 只显示在可见范围内或附近的刻度
+              if (x < -100 || x > viewWidth + 100) return null;
+              
+              const isMajor = time % 5 === 0;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: `${x}px`,
+                    bottom: 0,
+                    width: isMajor ? 1 : 0.5,
+                    background: isMajor ? '#ccc' : '#eee',
+                    zIndex: 1,
+                  }}
+                >
+                  {isMajor && (
+                    <div style={{ fontSize: 10, color: '#999', marginTop: -18, marginLeft: 2, whiteSpace: 'nowrap' }}>
+                      {formatDetailedTime(time)}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
 
         {isSelecting && (
           <div
@@ -557,196 +672,206 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
           </div>
         )}
 
-        {allItems.map(item => (
-          <div
-            key={item.id}
-            style={{
-              position: 'absolute',
-              top: item.type === 'label' ? 8 : 52,
-              height: 36,
-              left: `${getXFromTime(item.startTime)}px`,
-              width: `${getXFromTime(item.endTime) - getXFromTime(item.startTime)}px`,
-              background: item.type === 'label' ? channel.color : '#52c41a',
-              borderRadius: 4,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              color: 'white',
-              fontSize: 11,
-              fontWeight: 500,
-              cursor: 'move',
-              userSelect: 'none',
-              minWidth: 60,
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              zIndex: 5,
-            }}
-            onMouseDown={(e) => startDrag(e, item.id, item.type, 'move', item)}
-            onDoubleClick={(e) => handleDoubleClick(e, item, item.type)}
-          >
-            {/* 拖动句柄 - 左 */}
+        {allItems.map(item => {
+          const left = getXFromTime(item.startTime);
+          const right = getXFromTime(item.endTime);
+          const width = right - left;
+          
+          // 只渲染在可见范围内或附近的项目
+          if (right < -100 || left > viewWidth + 100) return null;
+          
+          return (
             <div
+              key={item.id}
               style={{
                 position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 10,
-                cursor: 'w-resize',
-                background: 'rgba(0,0,0,0.15)',
-                borderRadius: '4px 0 0 4px',
-                zIndex: 10,
+                top: item.type === 'label' ? 8 : 52,
+                height: 36,
+                left: `${left}px`,
+                width: `${Math.max(width, 30)}px`,
+                background: item.type === 'label' ? channel.color : '#52c41a',
+                borderRadius: 4,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: 11,
+                fontWeight: 500,
+                cursor: 'move',
+                userSelect: 'none',
+                minWidth: 30,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                zIndex: 5,
               }}
-              onMouseDown={(e) => startDrag(e, item.id, item.type, 'start', item)}
-            />
-            {/* 拖动句柄 - 右 */}
-            <div
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: 10,
-                cursor: 'e-resize',
-                background: 'rgba(0,0,0,0.15)',
-                borderRadius: '0 4px 4px 0',
-                zIndex: 10,
-              }}
-              onMouseDown={(e) => startDrag(e, item.id, item.type, 'end', item)}
-            />
+              onMouseDown={(e) => startDrag(e, item.id, item.type, 'move', item)}
+              onDoubleClick={(e) => handleDoubleClick(e, item, item.type)}
+            >
+              {/* 拖动句柄 - 左 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 10,
+                  cursor: 'w-resize',
+                  background: 'rgba(0,0,0,0.15)',
+                  borderRadius: '4px 0 0 4px',
+                  zIndex: 10,
+                }}
+                onMouseDown={(e) => startDrag(e, item.id, item.type, 'start', item)}
+              />
+              {/* 拖动句柄 - 右 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 10,
+                  cursor: 'e-resize',
+                  background: 'rgba(0,0,0,0.15)',
+                  borderRadius: '0 4px 4px 0',
+                  zIndex: 10,
+                }}
+                onMouseDown={(e) => startDrag(e, item.id, item.type, 'end', item)}
+              />
 
-            {/* 内容显示 */}
-            <div style={{ 
-              padding: '2px 12px', 
-              overflow: 'hidden', 
-              textOverflow: 'ellipsis', 
-              whiteSpace: 'nowrap',
-              lineHeight: 1.2,
-            }}>
-              {editingItem?.id === item.id && editingItem?.type === item.type ? (
-                <AntInput
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onBlur={saveEdit}
-                  onPressEnter={saveEdit}
-                  autoFocus
-                  size="small"
-                  style={{
-                    width: '100%',
-                    fontSize: 11,
-                    border: 'none',
-                    background: 'rgba(255,255,255,0.95)',
-                    color: '#333',
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <div style={{ fontWeight: 600, fontSize: 11 }}>
-                    {item.text || `${formatDetailedTime(item.startTime)} - ${formatDetailedTime(item.endTime)}`}
+              {/* 内容显示 */}
+              <div style={{ 
+                padding: '2px 12px', 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap',
+                lineHeight: 1.2,
+              }}>
+                {editingItem?.id === item.id && editingItem?.type === item.type ? (
+                  <AntInput
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onBlur={saveEdit}
+                    onPressEnter={saveEdit}
+                    autoFocus
+                    size="small"
+                    style={{
+                      width: '100%',
+                      fontSize: 11,
+                      border: 'none',
+                      background: 'rgba(255,255,255,0.95)',
+                      color: '#333',
+                    }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ fontWeight: 600, fontSize: 11 }}>
+                      {item.text || `${formatDetailedTime(item.startTime)} - ${formatDetailedTime(item.endTime)}`}
+                    </div>
+                    <div style={{ fontSize: 9, opacity: 0.85 }}>
+                      {formatDetailedTime(item.startTime)} - {formatDetailedTime(item.endTime)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 9, opacity: 0.85 }}>
-                    {formatDetailedTime(item.startTime)} - {formatDetailedTime(item.endTime)}
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* 操作按钮 */}
-            <div style={{ 
-              position: 'absolute', 
-              right: 14, 
-              top: 2, 
-              display: 'flex', 
-              gap: 2,
-              zIndex: 20,
-            }}>
-              {onPlaySegment && (
-                <Tooltip title="播放该片段">
+              {/* 操作按钮 */}
+              <div style={{ 
+                position: 'absolute', 
+                right: 14, 
+                top: 2, 
+                display: 'flex', 
+                gap: 2,
+                zIndex: 20,
+              }}>
+                {onPlaySegment && (
+                  <Tooltip title="播放该片段">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PlayCircleOutlined style={{ color: 'white', fontSize: 12 }} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPlaySegment(item.startTime, item.endTime);
+                      }}
+                    />
+                  </Tooltip>
+                )}
+                
+                <Tooltip title="转换为字幕/标签">
                   <Button
                     type="text"
                     size="small"
-                    icon={<PlayCircleOutlined style={{ color: 'white', fontSize: 12 }} />}
+                    icon={item.type === 'label' ? <SettingOutlined style={{ color: 'white', fontSize: 10 }} /> : <EditOutlined style={{ color: 'white', fontSize: 10 }} />}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onPlaySegment(item.startTime, item.endTime);
+                      if (item.type === 'label') {
+                        convertLabelToSubtitle(e, item as Label);
+                      } else {
+                        convertSubtitleToLabel(e, item as Subtitle);
+                      }
                     }}
                   />
                 </Tooltip>
-              )}
-              
-              <Tooltip title="转换为字幕/标签">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={item.type === 'label' ? <SettingOutlined style={{ color: 'white', fontSize: 10 }} /> : <EditOutlined style={{ color: 'white', fontSize: 10 }} />}
-                  onClick={(e) => {
-                    e.stopPropagation();
+                
+                <Tooltip title="编辑">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined style={{ color: 'white', fontSize: 12 }} />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openSettings(e, item, item.type);
+                    }}
+                  />
+                </Tooltip>
+                
+                <Popconfirm
+                  title={`确定删除此${item.type === 'label' ? '标签' : '字幕'}？`}
+                  onConfirm={(e) => {
+                    e?.stopPropagation();
                     if (item.type === 'label') {
-                      convertLabelToSubtitle(e, item as Label);
+                      dispatch({
+                        type: 'DELETE_LABEL',
+                        channelId: channel.id,
+                        labelId: item.id,
+                      });
                     } else {
-                      convertSubtitleToLabel(e, item as Subtitle);
+                      dispatch({
+                        type: 'DELETE_SUBTITLE',
+                        channelId: channel.id,
+                        subtitleId: item.id,
+                      });
                     }
                   }}
-                />
-              </Tooltip>
-              
-              <Tooltip title="编辑">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EditOutlined style={{ color: 'white', fontSize: 12 }} />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openSettings(e, item, item.type);
-                  }}
-                />
-              </Tooltip>
-              
-              <Popconfirm
-                title={`确定删除此${item.type === 'label' ? '标签' : '字幕'}？`}
-                onConfirm={(e) => {
-                  e?.stopPropagation();
-                  if (item.type === 'label') {
-                    dispatch({
-                      type: 'DELETE_LABEL',
-                      channelId: channel.id,
-                      labelId: item.id,
-                    });
-                  } else {
-                    dispatch({
-                      type: 'DELETE_SUBTITLE',
-                      channelId: channel.id,
-                      subtitleId: item.id,
-                    });
-                  }
-                }}
-                okText="确定"
-                cancelText="取消"
-              >
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined style={{ color: 'white', fontSize: 12 }} />}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </Popconfirm>
-            </div>
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DeleteOutlined style={{ color: 'white', fontSize: 12 }} />}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Popconfirm>
+              </div>
 
-            {/* 类型标识 */}
-            <div style={{
-              position: 'absolute',
-              top: -16,
-              left: 0,
-              fontSize: 10,
-              background: item.type === 'label' ? channel.color : '#52c41a',
-              color: 'white',
-              padding: '1px 6px',
-              borderRadius: '4px 4px 0 0',
-              fontWeight: 600,
-            }}>
-              {item.type === 'label' ? '标签' : '字幕'}
+              {/* 类型标识 */}
+              <div style={{
+                position: 'absolute',
+                top: -16,
+                left: 0,
+                fontSize: 10,
+                background: item.type === 'label' ? channel.color : '#52c41a',
+                color: 'white',
+                padding: '1px 6px',
+                borderRadius: '4px 4px 0 0',
+                fontWeight: 600,
+              }}>
+                {item.type === 'label' ? '标签' : '字幕'}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+        </div>
       </div>
 
       {/* 设置弹窗 */}
