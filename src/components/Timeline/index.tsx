@@ -1,30 +1,38 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Tag } from 'antd';
-import { DeleteOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
-import { Label, Channel } from '../../types';
+import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Space, Input as AntInput, message } from 'antd';
+import { DeleteOutlined, EditOutlined, SettingOutlined, ScissorOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import { v4 as uuidv4 } from 'uuid';
+import { Label, Channel, Subtitle } from '../../types';
 import { useAppContext } from '../../store';
 
 interface TimelineProps {
   channel: Channel;
+  channels: Channel[];
   duration: number;
+  currentAudioFile?: any;
+  onPlaySegment?: (start: number, end: number) => void;
 }
 
-const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
-  const { dispatch } = useAppContext();
+const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, currentAudioFile, onPlaySegment }) => {
+  const { dispatch, state } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'start' | 'end' | 'move' | null>(null);
+  const [dragItemType, setDragItemType] = useState<'label' | 'subtitle' | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartTime, setDragStartTime] = useState(0);
   const [dragEndTime, setDragEndTime] = useState(0);
-  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<{ id: string; type: 'label' | 'subtitle' } | null>(null);
   const [editText, setEditText] = useState('');
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
-  const [labelSettingsModalVisible, setLabelSettingsModalVisible] = useState(false);
-  const [currentEditingLabel, setCurrentEditingLabel] = useState<Label | null>(null);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [currentEditingItem, setCurrentEditingItem] = useState<{ item: Label | Subtitle; type: 'label' | 'subtitle' } | null>(null);
   const [form] = Form.useForm();
+  const [clipModalVisible, setClipModalVisible] = useState(false);
+  const [clipStart, setClipStart] = useState(0);
+  const [clipEnd, setClipEnd] = useState(duration || 10);
 
   const getTimeFromX = (x: number): number => {
     if (!containerRef.current) return 0;
@@ -55,41 +63,75 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
 
     if (isSelecting) {
       setSelectionEnd(time);
-    } else if (isDragging && dragType) {
+    } else if (isDragging && dragType && dragItemType) {
       const deltaTime = time - getTimeFromX(dragStartX);
-      const label = channel.labels.find(l => l.id === isDragging);
-      if (!label) return;
+      let item: Label | Subtitle | undefined;
+      
+      if (dragItemType === 'label') {
+        item = channel.labels.find(l => l.id === isDragging);
+      } else {
+        item = channel.subtitles.find(s => s.id === isDragging);
+      }
+      
+      if (!item) return;
 
       if (dragType === 'move') {
         const newStart = dragStartTime + deltaTime;
         const newEnd = dragEndTime + deltaTime;
         if (newStart >= 0 && newEnd <= duration) {
-          dispatch({
-            type: 'UPDATE_LABEL',
-            channelId: channel.id,
-            labelId: isDragging,
-            updates: { startTime: newStart, endTime: newEnd },
-          });
+          if (dragItemType === 'label') {
+            dispatch({
+              type: 'UPDATE_LABEL',
+              channelId: channel.id,
+              labelId: isDragging,
+              updates: { startTime: newStart, endTime: newEnd },
+            });
+          } else {
+            dispatch({
+              type: 'UPDATE_SUBTITLE',
+              channelId: channel.id,
+              subtitleId: isDragging,
+              updates: { startTime: newStart, endTime: newEnd },
+            });
+          }
         }
       } else if (dragType === 'start') {
         const newStart = Math.max(0, dragStartTime + deltaTime);
-        if (newStart < label.endTime) {
-          dispatch({
-            type: 'UPDATE_LABEL',
-            channelId: channel.id,
-            labelId: isDragging,
-            updates: { startTime: newStart },
-          });
+        if (newStart < item.endTime) {
+          if (dragItemType === 'label') {
+            dispatch({
+              type: 'UPDATE_LABEL',
+              channelId: channel.id,
+              labelId: isDragging,
+              updates: { startTime: newStart },
+            });
+          } else {
+            dispatch({
+              type: 'UPDATE_SUBTITLE',
+              channelId: channel.id,
+              subtitleId: isDragging,
+              updates: { startTime: newStart },
+            });
+          }
         }
       } else if (dragType === 'end') {
         const newEnd = Math.min(duration, dragEndTime + deltaTime);
-        if (newEnd > label.startTime) {
-          dispatch({
-            type: 'UPDATE_LABEL',
-            channelId: channel.id,
-            labelId: isDragging,
-            updates: { endTime: newEnd },
-          });
+        if (newEnd > item.startTime) {
+          if (dragItemType === 'label') {
+            dispatch({
+              type: 'UPDATE_LABEL',
+              channelId: channel.id,
+              labelId: isDragging,
+              updates: { endTime: newEnd },
+            });
+          } else {
+            dispatch({
+              type: 'UPDATE_SUBTITLE',
+              channelId: channel.id,
+              subtitleId: isDragging,
+              updates: { endTime: newEnd },
+            });
+          }
         }
       }
     }
@@ -112,72 +154,310 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
     setIsSelecting(false);
     setIsDragging(null);
     setDragType(null);
+    setDragItemType(null);
   };
 
   const startDrag = (
     e: React.MouseEvent,
-    labelId: string,
+    itemId: string,
+    itemType: 'label' | 'subtitle',
     type: 'start' | 'end' | 'move',
-    label: Label
+    item: Label | Subtitle
   ) => {
     e.stopPropagation();
-    setIsDragging(labelId);
+    setIsDragging(itemId);
+    setDragItemType(itemType);
     setDragType(type);
     const rect = containerRef.current!.getBoundingClientRect();
     setDragStartX(e.clientX - rect.left);
-    setDragStartTime(label.startTime);
-    setDragEndTime(label.endTime);
+    setDragStartTime(item.startTime);
+    setDragEndTime(item.endTime);
   };
 
-  const startEdit = (label: Label) => {
-    setEditingLabel(label.id);
-    setEditText(label.text);
+  const startEdit = (item: Label | Subtitle, type: 'label' | 'subtitle') => {
+    setEditingItem({ id: item.id, type });
+    setEditText(item.text);
   };
 
   const saveEdit = () => {
-    if (editingLabel) {
-      dispatch({
-        type: 'UPDATE_LABEL',
-        channelId: channel.id,
-        labelId: editingLabel,
-        updates: { text: editText },
-      });
-      setEditingLabel(null);
-    }
-  };
-
-  const openLabelSettings = (e: React.MouseEvent, label: Label) => {
-    e.stopPropagation();
-    setCurrentEditingLabel(label);
-    form.setFieldsValue({
-      text: label.text,
-      startTime: label.startTime,
-      endTime: label.endTime,
-    });
-    setLabelSettingsModalVisible(true);
-  };
-
-  const saveLabelSettings = () => {
-    form.validateFields().then((values) => {
-      if (currentEditingLabel) {
+    if (editingItem) {
+      if (editingItem.type === 'label') {
         dispatch({
           type: 'UPDATE_LABEL',
           channelId: channel.id,
-          labelId: currentEditingLabel.id,
-          updates: {
-            text: values.text,
-            startTime: values.startTime,
-            endTime: values.endTime,
-          },
+          labelId: editingItem.id,
+          updates: { text: editText },
+        });
+      } else {
+        dispatch({
+          type: 'UPDATE_SUBTITLE',
+          channelId: channel.id,
+          subtitleId: editingItem.id,
+          updates: { text: editText },
         });
       }
-      setLabelSettingsModalVisible(false);
+      setEditingItem(null);
+    }
+  };
+
+  const openSettings = (e: React.MouseEvent, item: Label | Subtitle, type: 'label' | 'subtitle') => {
+    e.stopPropagation();
+    setCurrentEditingItem({ item, type });
+    form.setFieldsValue({
+      text: item.text,
+      startTime: item.startTime,
+      endTime: item.endTime,
+    });
+    setSettingsModalVisible(true);
+  };
+
+  const saveSettings = () => {
+    form.validateFields().then((values) => {
+      if (currentEditingItem) {
+        if (currentEditingItem.type === 'label') {
+          dispatch({
+            type: 'UPDATE_LABEL',
+            channelId: channel.id,
+            labelId: currentEditingItem.item.id,
+            updates: {
+              text: values.text,
+              startTime: values.startTime,
+              endTime: values.endTime,
+            },
+          });
+        } else {
+          dispatch({
+            type: 'UPDATE_SUBTITLE',
+            channelId: channel.id,
+            subtitleId: currentEditingItem.item.id,
+            updates: {
+              text: values.text,
+              startTime: values.startTime,
+              endTime: values.endTime,
+            },
+          });
+        }
+      }
+      setSettingsModalVisible(false);
     });
   };
 
-  const handleDoubleClick = (e: React.MouseEvent, label: Label) => {
+  const handleDoubleClick = (e: React.MouseEvent, item: Label | Subtitle, type: 'label' | 'subtitle') => {
     e.stopPropagation();
-    openLabelSettings(e, label);
+    openSettings(e, item, type);
+  };
+
+  const convertLabelToSubtitle = (e: React.MouseEvent, label: Label) => {
+    e.stopPropagation();
+    dispatch({
+      type: 'ADD_SUBTITLE',
+      channelId: channel.id,
+      startTime: label.startTime,
+      endTime: label.endTime,
+      text: label.text,
+    });
+    dispatch({
+      type: 'DELETE_LABEL',
+      channelId: channel.id,
+      labelId: label.id,
+    });
+  };
+
+  const convertSubtitleToLabel = (e: React.MouseEvent, subtitle: Subtitle) => {
+    e.stopPropagation();
+    dispatch({
+      type: 'ADD_LABEL',
+      channelId: channel.id,
+      startTime: subtitle.startTime,
+      endTime: subtitle.endTime,
+      text: subtitle.text,
+    });
+    dispatch({
+      type: 'DELETE_SUBTITLE',
+      channelId: channel.id,
+      subtitleId: subtitle.id,
+    });
+  };
+
+  const openClipModal = (start: number, end: number) => {
+    setClipStart(start);
+    setClipEnd(end);
+    setClipModalVisible(true);
+  };
+
+  const handleClipToNewProject = () => {
+    // 剪切逻辑：更新所有标签和字幕的时间
+    const clipDuration = clipEnd - clipStart;
+    
+    // 处理所有通道，不是只处理当前通道
+    const processedChannels = channels.map(ch => {
+      const newChannelId = uuidv4();
+      return {
+        ...ch,
+        id: newChannelId,
+        labels: ch.labels
+          .filter(l => l.endTime > clipStart && l.startTime < clipEnd)
+          .map(l => ({
+            ...l,
+            id: uuidv4(),
+            channelId: newChannelId, // 更新channelId为新通道的id
+            startTime: Math.max(0, l.startTime - clipStart),
+            endTime: Math.min(clipDuration, l.endTime - clipStart),
+          })),
+        subtitles: ch.subtitles
+          .filter(s => s.endTime > clipStart && s.startTime < clipEnd)
+          .map(s => ({
+            ...s,
+            id: uuidv4(),
+            startTime: Math.max(0, s.startTime - clipStart),
+            endTime: Math.min(clipDuration, s.endTime - clipStart),
+          })),
+      };
+    });
+    
+    // 创建新项目
+    const newProject = {
+      id: uuidv4(),
+      name: `${state.project?.name || '项目'}_剪切_${formatDetailedTime(clipStart)}_${formatDetailedTime(clipEnd)}`,
+      audioFiles: currentAudioFile ? [currentAudioFile] : [], // 保留原音频文件
+      currentAudioId: currentAudioFile?.id || null,
+      channels: processedChannels,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    
+    dispatch({ type: 'CREATE_CLIP_PROJECT', project: newProject });
+    message.success(`已创建剪切项目！\n开始时间: ${formatDetailedTime(clipStart)}\n结束时间: ${formatDetailedTime(clipEnd)}\n时长: ${(clipDuration).toFixed(2)}秒`);
+    setClipModalVisible(false);
+  };
+
+  const handleDeleteSegment = () => {
+    // 删除片段逻辑
+    const segmentDuration = clipEnd - clipStart;
+    
+    // 对所有通道进行处理
+    channels.forEach(ch => {
+      // 更新标签
+      ch.labels.forEach(label => {
+        if (label.endTime <= clipStart) {
+          // 标签在删除段前，无需更改
+        } else if (label.startTime >= clipEnd) {
+          // 标签在删除段后，向前移动
+          dispatch({
+            type: 'UPDATE_LABEL',
+            channelId: ch.id,
+            labelId: label.id,
+            updates: {
+              startTime: label.startTime - segmentDuration,
+              endTime: label.endTime - segmentDuration,
+            },
+          });
+        } else if (label.startTime < clipStart && label.endTime > clipEnd) {
+          // 标签包含删除段，分割为两个标签
+          dispatch({
+            type: 'UPDATE_LABEL',
+            channelId: ch.id,
+            labelId: label.id,
+            updates: { endTime: clipStart },
+          });
+          dispatch({
+            type: 'ADD_LABEL',
+            channelId: ch.id,
+            startTime: clipStart,
+            endTime: label.endTime - segmentDuration,
+            text: label.text,
+          });
+        } else if (label.startTime < clipStart && label.endTime <= clipEnd) {
+          // 标签与删除段前部分重叠
+          dispatch({
+            type: 'UPDATE_LABEL',
+            channelId: ch.id,
+            labelId: label.id,
+            updates: { endTime: clipStart },
+          });
+        } else if (label.startTime >= clipStart && label.endTime > clipEnd) {
+          // 标签与删除段后部分重叠
+          dispatch({
+            type: 'UPDATE_LABEL',
+            channelId: ch.id,
+            labelId: label.id,
+            updates: {
+              startTime: clipStart,
+              endTime: label.endTime - segmentDuration,
+            },
+          });
+        } else {
+          // 标签完全在删除段内，删除
+          dispatch({
+            type: 'DELETE_LABEL',
+            channelId: ch.id,
+            labelId: label.id,
+          });
+        }
+      });
+      
+      // 更新字幕
+      ch.subtitles.forEach(subtitle => {
+        if (subtitle.endTime <= clipStart) {
+          // 字幕在删除段前，无需更改
+        } else if (subtitle.startTime >= clipEnd) {
+          // 字幕在删除段后，向前移动
+          dispatch({
+            type: 'UPDATE_SUBTITLE',
+            channelId: ch.id,
+            subtitleId: subtitle.id,
+            updates: {
+              startTime: subtitle.startTime - segmentDuration,
+              endTime: subtitle.endTime - segmentDuration,
+            },
+          });
+        } else if (subtitle.startTime < clipStart && subtitle.endTime > clipEnd) {
+          // 字幕包含删除段，分割为两个字幕
+          dispatch({
+            type: 'UPDATE_SUBTITLE',
+            channelId: ch.id,
+            subtitleId: subtitle.id,
+            updates: { endTime: clipStart },
+          });
+          dispatch({
+            type: 'ADD_SUBTITLE',
+            channelId: ch.id,
+            startTime: clipStart,
+            endTime: subtitle.endTime - segmentDuration,
+            text: subtitle.text,
+          });
+        } else if (subtitle.startTime < clipStart && subtitle.endTime <= clipEnd) {
+          // 字幕与删除段前部分重叠
+          dispatch({
+            type: 'UPDATE_SUBTITLE',
+            channelId: ch.id,
+            subtitleId: subtitle.id,
+            updates: { endTime: clipStart },
+          });
+        } else if (subtitle.startTime >= clipStart && subtitle.endTime > clipEnd) {
+          // 字幕与删除段后部分重叠
+          dispatch({
+            type: 'UPDATE_SUBTITLE',
+            channelId: ch.id,
+            subtitleId: subtitle.id,
+            updates: {
+              startTime: clipStart,
+              endTime: subtitle.endTime - segmentDuration,
+            },
+          });
+        } else {
+          // 字幕完全在删除段内，删除
+          dispatch({
+            type: 'DELETE_SUBTITLE',
+            channelId: ch.id,
+            subtitleId: subtitle.id,
+          });
+        }
+      });
+    });
+    
+    message.success(`已删除片段！\n开始时间: ${formatDetailedTime(clipStart)}\n结束时间: ${formatDetailedTime(clipEnd)}`);
+    setClipModalVisible(false);
   };
 
   const formatTime = (seconds: number): string => {
@@ -193,23 +473,49 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
     return `${mins}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   };
 
+  const allItems = [
+    ...channel.labels.map(l => ({ ...l, type: 'label' })),
+    ...channel.subtitles.map(s => ({ ...s, type: 'subtitle' })),
+  ].sort((a, b) => a.startTime - b.startTime);
+
   return (
     <div>
       <div
         ref={containerRef}
         style={{
           position: 'relative',
-          height: 60,
+          height: 100,
           background: '#f0f0f0',
-          borderRadius: 4,
+          borderRadius: 8,
           cursor: 'crosshair',
-          overflow: 'hidden',
+          overflow: 'visible',
+          padding: '4px 0',
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
+        {/* 时间轴刻度线 */}
+        {Array.from({ length: Math.ceil(duration / 5) + 1 }).map((_, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: `${getXFromTime(i * 5)}px`,
+              bottom: 0,
+              width: 1,
+              background: '#ddd',
+              zIndex: 1,
+            }}
+          >
+            <div style={{ fontSize: 10, color: '#999', marginTop: -18, marginLeft: 2 }}>
+              {i * 5}
+            </div>
+          </div>
+        ))}
+
         {isSelecting && (
           <div
             style={{
@@ -218,150 +524,246 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
               bottom: 0,
               left: `${getXFromTime(Math.min(selectionStart, selectionEnd))}px`,
               width: `${Math.abs(getXFromTime(selectionEnd) - getXFromTime(selectionStart))}px`,
-              background: 'rgba(24, 144, 255, 0.3)',
+              background: 'rgba(24, 144, 255, 0.2)',
+              border: '2px dashed #1890ff',
+              zIndex: 10,
               pointerEvents: 'none',
             }}
-          />
+          >
+            <div style={{
+              position: 'absolute',
+              top: -30,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)',
+              color: 'white',
+              padding: '2px 8px',
+              borderRadius: 4,
+              fontSize: 11,
+              whiteSpace: 'nowrap',
+            }}>
+              {formatDetailedTime(Math.min(selectionStart, selectionEnd))} - {formatDetailedTime(Math.max(selectionStart, selectionEnd))}
+              <Button
+                type="text"
+                size="small"
+                icon={<ScissorOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openClipModal(Math.min(selectionStart, selectionEnd), Math.max(selectionStart, selectionEnd));
+                }}
+                style={{ color: 'white', fontSize: 11, marginLeft: 8 }}
+              />
+            </div>
+          </div>
         )}
 
-        {channel.labels
-          .sort((a, b) => a.startTime - b.startTime)
-          .map(label => (
+        {allItems.map(item => (
+          <div
+            key={item.id}
+            style={{
+              position: 'absolute',
+              top: item.type === 'label' ? 8 : 52,
+              height: 36,
+              left: `${getXFromTime(item.startTime)}px`,
+              width: `${getXFromTime(item.endTime) - getXFromTime(item.startTime)}px`,
+              background: item.type === 'label' ? channel.color : '#52c41a',
+              borderRadius: 4,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              color: 'white',
+              fontSize: 11,
+              fontWeight: 500,
+              cursor: 'move',
+              userSelect: 'none',
+              minWidth: 60,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              zIndex: 5,
+            }}
+            onMouseDown={(e) => startDrag(e, item.id, item.type, 'move', item)}
+            onDoubleClick={(e) => handleDoubleClick(e, item, item.type)}
+          >
+            {/* 拖动句柄 - 左 */}
             <div
-              key={label.id}
               style={{
                 position: 'absolute',
-                top: 8,
-                bottom: 8,
-                left: `${getXFromTime(label.startTime)}px`,
-                width: `${getXFromTime(label.endTime) - getXFromTime(label.startTime)}px`,
-                background: channel.color,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'move',
-                userSelect: 'none',
-                minWidth: 40,
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 10,
+                cursor: 'w-resize',
+                background: 'rgba(0,0,0,0.15)',
+                borderRadius: '4px 0 0 4px',
+                zIndex: 10,
               }}
-              onMouseDown={(e) => startDrag(e, label.id, 'move', label)}
-              onDoubleClick={(e) => handleDoubleClick(e, label)}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: 8,
-                  cursor: 'w-resize',
-                  background: 'rgba(0,0,0,0.2)',
-                  borderRadius: '4px 0 0 4px',
-                }}
-                onMouseDown={(e) => startDrag(e, label.id, 'start', label)}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: 8,
-                  cursor: 'e-resize',
-                  background: 'rgba(0,0,0,0.2)',
-                  borderRadius: '0 4px 4px 0',
-                }}
-                onMouseDown={(e) => startDrag(e, label.id, 'end', label)}
-              />
+              onMouseDown={(e) => startDrag(e, item.id, item.type, 'start', item)}
+            />
+            {/* 拖动句柄 - 右 */}
+            <div
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: 10,
+                cursor: 'e-resize',
+                background: 'rgba(0,0,0,0.15)',
+                borderRadius: '0 4px 4px 0',
+                zIndex: 10,
+              }}
+              onMouseDown={(e) => startDrag(e, item.id, item.type, 'end', item)}
+            />
 
-              {editingLabel === label.id ? (
-                <Input
+            {/* 内容显示 */}
+            <div style={{ 
+              padding: '2px 12px', 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis', 
+              whiteSpace: 'nowrap',
+              lineHeight: 1.2,
+            }}>
+              {editingItem?.id === item.id && editingItem?.type === item.type ? (
+                <AntInput
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
                   onBlur={saveEdit}
-                  onEnterPress={saveEdit}
+                  onPressEnter={saveEdit}
                   autoFocus
+                  size="small"
                   style={{
-                    width: '80%',
-                    fontSize: 12,
+                    width: '100%',
+                    fontSize: 11,
                     border: 'none',
-                    background: 'rgba(255,255,255,0.9)',
+                    background: 'rgba(255,255,255,0.95)',
                     color: '#333',
                   }}
                 />
               ) : (
-                <div style={{ padding: '0 16px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {label.text || `${formatTime(label.startTime)} - ${formatTime(label.endTime)}`}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ fontWeight: 600, fontSize: 11 }}>
+                    {item.text || `${formatDetailedTime(item.startTime)} - ${formatDetailedTime(item.endTime)}`}
+                  </div>
+                  <div style={{ fontSize: 9, opacity: 0.85 }}>
+                    {formatDetailedTime(item.startTime)} - {formatDetailedTime(item.endTime)}
+                  </div>
                 </div>
               )}
+            </div>
 
-              <div style={{ position: 'absolute', right: 20, top: 2, display: 'flex', gap: 4 }}>
-                <Tooltip title="标签设置">
+            {/* 操作按钮 */}
+            <div style={{ 
+              position: 'absolute', 
+              right: 14, 
+              top: 2, 
+              display: 'flex', 
+              gap: 2,
+              zIndex: 20,
+            }}>
+              {onPlaySegment && (
+                <Tooltip title="播放该片段">
                   <Button
                     type="text"
                     size="small"
-                    icon={<SettingOutlined style={{ color: 'white', fontSize: 12 }} />}
-                    onClick={(e) => openLabelSettings(e, label)}
-                  />
-                </Tooltip>
-                <Tooltip title="编辑文字">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined style={{ color: 'white', fontSize: 12 }} />}
+                    icon={<PlayCircleOutlined style={{ color: 'white', fontSize: 12 }} />}
                     onClick={(e) => {
                       e.stopPropagation();
-                      startEdit(label);
+                      onPlaySegment(item.startTime, item.endTime);
                     }}
                   />
                 </Tooltip>
-                <Popconfirm
-                  title="确定删除此标签？"
-                  onConfirm={(e) => {
-                    e?.stopPropagation();
+              )}
+              
+              <Tooltip title="转换为字幕/标签">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={item.type === 'label' ? <SettingOutlined style={{ color: 'white', fontSize: 10 }} /> : <EditOutlined style={{ color: 'white', fontSize: 10 }} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (item.type === 'label') {
+                      convertLabelToSubtitle(e, item as Label);
+                    } else {
+                      convertSubtitleToLabel(e, item as Subtitle);
+                    }
+                  }}
+                />
+              </Tooltip>
+              
+              <Tooltip title="编辑">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined style={{ color: 'white', fontSize: 12 }} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSettings(e, item, item.type);
+                  }}
+                />
+              </Tooltip>
+              
+              <Popconfirm
+                title={`确定删除此${item.type === 'label' ? '标签' : '字幕'}？`}
+                onConfirm={(e) => {
+                  e?.stopPropagation();
+                  if (item.type === 'label') {
                     dispatch({
                       type: 'DELETE_LABEL',
                       channelId: channel.id,
-                      labelId: label.id,
+                      labelId: item.id,
                     });
-                  }}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<DeleteOutlined style={{ color: 'white', fontSize: 12 }} />}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </Popconfirm>
-              </div>
-
-              <div style={{ position: 'absolute', bottom: -18, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: '#999' }}>
-                <Tag color={channel.color} style={{ fontSize: 10, margin: 0 }}>
-                  {formatDetailedTime(label.startTime)} - {formatDetailedTime(label.endTime)}
-                </Tag>
-              </div>
+                  } else {
+                    dispatch({
+                      type: 'DELETE_SUBTITLE',
+                      channelId: channel.id,
+                      subtitleId: item.id,
+                    });
+                  }
+                }}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined style={{ color: 'white', fontSize: 12 }} />}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Popconfirm>
             </div>
-          ))}
+
+            {/* 类型标识 */}
+            <div style={{
+              position: 'absolute',
+              top: -16,
+              left: 0,
+              fontSize: 10,
+              background: item.type === 'label' ? channel.color : '#52c41a',
+              color: 'white',
+              padding: '1px 6px',
+              borderRadius: '4px 4px 0 0',
+              fontWeight: 600,
+            }}>
+              {item.type === 'label' ? '标签' : '字幕'}
+            </div>
+          </div>
+        ))}
       </div>
 
+      {/* 设置弹窗 */}
       <Modal
-        title="标签设置"
-        open={labelSettingsModalVisible}
-        onOk={saveLabelSettings}
-        onCancel={() => setLabelSettingsModalVisible(false)}
+        title="设置"
+        open={settingsModalVisible}
+        onOk={saveSettings}
+        onCancel={() => setSettingsModalVisible(false)}
+        width={500}
       >
         <Form form={form} layout="vertical">
           <Form.Item
             name="text"
-            label="标签文字"
-            rules={[{ required: true, message: '请输入标签文字' }]}
+            label="文字内容"
+            rules={[{ required: true, message: '请输入内容' }]}
           >
-            <Input placeholder="请输入标签文字" />
+            <Input.TextArea placeholder="请输入内容" rows={3} />
           </Form.Item>
           <Form.Item
             name="startTime"
@@ -392,6 +794,63 @@ const Timeline: React.FC<TimelineProps> = ({ channel, duration }) => {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 音频剪切弹窗 */}
+      <Modal
+        title="音频片段操作"
+        open={clipModalVisible}
+        onCancel={() => setClipModalVisible(false)}
+        footer={null}
+        width={500}
+      >
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16, fontSize: 14 }}>
+            选择片段: <strong>{formatDetailedTime(clipStart)}</strong> - <strong>{formatDetailedTime(clipEnd)}</strong>
+          </div>
+          <Form layout="vertical">
+            <Form.Item label="开始时间 (秒)">
+              <InputNumber
+                style={{ width: '100%' }}
+                value={clipStart}
+                onChange={setClipStart}
+                min={0}
+                max={clipEnd}
+                step={0.01}
+                precision={2}
+              />
+            </Form.Item>
+            <Form.Item label="结束时间 (秒)">
+              <InputNumber
+                style={{ width: '100%' }}
+                value={clipEnd}
+                onChange={setClipEnd}
+                min={clipStart}
+                max={duration}
+                step={0.01}
+                precision={2}
+              />
+            </Form.Item>
+          </Form>
+        </div>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Button
+            type="primary"
+            icon={<ScissorOutlined />}
+            block
+            onClick={handleClipToNewProject}
+          >
+            剪切片段到新项目
+          </Button>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            block
+            onClick={handleDeleteSegment}
+          >
+            删除该片段（并更新标签和字幕时间）
+          </Button>
+        </Space>
       </Modal>
     </div>
   );

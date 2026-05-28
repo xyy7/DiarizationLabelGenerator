@@ -8,11 +8,13 @@ import { exportSRT, importSRT } from '../../utils';
 
 interface ChannelPanelProps {
   channel: Channel;
+  channels: Channel[];
   duration: number;
+  currentAudioFile?: any;
 }
 
-const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, duration }) => {
-  const { dispatch } = useAppContext();
+const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration, currentAudioFile }) => {
+  const { dispatch, state } = useAppContext();
   const [isEditingName, setIsEditingName] = useState(false);
   const [name, setName] = useState(channel.name);
   const [activeTab, setActiveTab] = useState('labels');
@@ -156,7 +158,12 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, duration }) => {
             <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
               在下方拖动鼠标选择区域添加标签
             </p>
-            <Timeline channel={channel} duration={duration} />
+            <Timeline 
+              channel={channel} 
+              channels={channels} 
+              duration={duration} 
+              currentAudioFile={currentAudioFile}
+            />
           </div>
         </Tabs.TabPane>
 

@@ -206,7 +206,9 @@ const AppContent: React.FC = () => {
             <ChannelPanel
               key={channel.id}
               channel={channel}
+              channels={state.project.channels}
               duration={state.duration || 100}
+              currentAudioFile={currentAudio}
             />
           ))}
 
