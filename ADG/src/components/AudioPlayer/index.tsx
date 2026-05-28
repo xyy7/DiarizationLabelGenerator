@@ -20,6 +20,60 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
   const { state, dispatch } = useAppContext();
   const [isReady, setIsReady] = useState(false);
 
+  // 键盘快捷键处理
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 防止在输入框中触发快捷键
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skip(-5);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skip(5);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          skip(10);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          skip(-10);
+          break;
+        case 'Digit1':
+          e.preventDefault();
+          dispatch({ type: 'SET_PLAYBACK_RATE', rate: 0.5 });
+          break;
+        case 'Digit2':
+          e.preventDefault();
+          dispatch({ type: 'SET_PLAYBACK_RATE', rate: 1 });
+          break;
+        case 'Digit3':
+          e.preventDefault();
+          dispatch({ type: 'SET_PLAYBACK_RATE', rate: 1.5 });
+          break;
+        case 'Digit4':
+          e.preventDefault();
+          dispatch({ type: 'SET_PLAYBACK_RATE', rate: 2 });
+          break;
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [state.playbackRate, isReady]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -91,10 +145,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  const presetSpeeds = [0.5, 1, 1.5, 2];
+
   return (
     <div style={{ padding: '16px', background: '#f5f5f5', borderRadius: '8px' }}>
       <div ref={containerRef} style={{ marginBottom: '16px' }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <Space>
           <Tooltip title="后退 5 秒">
             <Button icon={<StepBackwardOutlined />} onClick={() => skip(-5)} />
@@ -132,16 +188,28 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
 
         <Space>
           <span>倍速:</span>
+          {presetSpeeds.map((speed) => (
+            <Button
+              key={speed}
+              type={state.playbackRate === speed ? 'primary' : 'default'}
+              size="small"
+              onClick={() => dispatch({ type: 'SET_PLAYBACK_RATE', rate: speed })}
+            >
+              {speed}x
+            </Button>
+          ))}
           <Slider
-            style={{ width: 100 }}
+            style={{ width: 80 }}
             min={0.5}
             max={2}
             step={0.1}
             value={state.playbackRate}
             onChange={(value) => dispatch({ type: 'SET_PLAYBACK_RATE', rate: value })}
           />
-          <span>{state.playbackRate}x</span>
         </Space>
+      </div>
+      <div style={{ marginTop: '8px', fontSize: '12px', color: '#999', textAlign: 'center' }}>
+        快捷键: 空格播放/暂停, 方向键快进/退, 1-4预设倍速
       </div>
     </div>
   );
