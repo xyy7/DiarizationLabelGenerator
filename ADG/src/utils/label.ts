@@ -42,3 +42,31 @@ export const getRandomColor = (): string => {
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 };
+
+export const exportRTTM = (channels: Channel[], fileName: string = 'audio'): string => {
+  const lines: string[] = [];
+
+  channels.forEach((channel, channelIndex) => {
+    channel.labels.forEach(label => {
+      // 查找对应的字幕
+      let subtitleText = '<NA>';
+      const matchingSubtitle = channel.subtitles.find(
+        sub => Math.abs(sub.startTime - label.startTime) < 0.1 && Math.abs(sub.endTime - label.endTime) < 0.1
+      );
+      if (matchingSubtitle && matchingSubtitle.text.trim()) {
+        subtitleText = matchingSubtitle.text;
+      }
+
+      // 构造 RTTM 行
+      const duration = (label.endTime - label.startTime).toFixed(6);
+      const startTime = label.startTime.toFixed(6);
+      const speakerName = channel.name.replace(/\s+/g, '_');
+      
+      // RTTM 格式: SPEAKER <file-id> <channel> <start-time> <duration> <NA> <NA> <speaker> <NA> <NA> [subtitle]
+      const line = `SPEAKER ${fileName} ${channelIndex + 1} ${startTime} ${duration} <NA> <NA> ${speakerName} <NA> <NA> ${subtitleText}`;
+      lines.push(line);
+    });
+  });
+
+  return lines.join('\n');
+};
