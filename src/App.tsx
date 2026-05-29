@@ -11,7 +11,7 @@ import AudioPlayer from './components/AudioPlayer';
 import ChannelPanel from './components/ChannelPanel';
 import { AppProvider, useAppContext } from './store';
 import { AudioFile } from './types';
-import { exportLabels, importLabels } from './utils';
+import { exportLabels, importLabels, exportRTTM } from './utils';
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
@@ -74,6 +74,23 @@ const AppContent: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
     message.success('标签已导出');
+  };
+
+  const handleExportRTTM = () => {
+    if (!state.project) return;
+    const currentAudio = state.project.audioFiles.find(
+      f => f.id === state.project?.currentAudioId
+    );
+    const fileName = currentAudio ? currentAudio.name.replace(/\.[^/.]+$/, '') : state.project.name;
+    const content = exportRTTM(state.project.channels, fileName);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${state.project.name}.rttm`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('RTTM文件已导出');
   };
 
   const handleImportLabels = (file: File) => {
@@ -140,6 +157,9 @@ const AppContent: React.FC = () => {
           </Button>
           <Button icon={<SaveOutlined />} onClick={handleExportLabels}>
             导出标签
+          </Button>
+          <Button icon={<SaveOutlined />} onClick={handleExportRTTM}>
+            导出RTTM
           </Button>
         </Space>
       </Header>
