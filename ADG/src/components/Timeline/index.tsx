@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Space, Input as AntInput, message, Slider } from 'antd';
-import { DeleteOutlined, EditOutlined, SettingOutlined, ScissorOutlined, PlayCircleOutlined, PauseCircleOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
+import { Button, Input, Popconfirm, Tooltip, Modal, Form, InputNumber, Space, Input as AntInput, message } from 'antd';
+import { DeleteOutlined, EditOutlined, ScissorOutlined, PlayCircleOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
-import { Label, Channel, Subtitle } from '../../types';
+import { TrackItem, Channel } from '../../types';
 import { useAppContext } from '../../store';
 
 interface TimelineProps {
@@ -19,26 +19,24 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'start' | 'end' | 'move' | null>(null);
-  const [dragItemType, setDragItemType] = useState<'label' | 'subtitle' | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartTime, setDragStartTime] = useState(0);
   const [dragEndTime, setDragEndTime] = useState(0);
-  const [editingItem, setEditingItem] = useState<{ id: string; type: 'label' | 'subtitle' } | null>(null);
+  const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [currentEditingItem, setCurrentEditingItem] = useState<{ item: Label | Subtitle; type: 'label' | 'subtitle' } | null>(null);
+  const [currentEditingItem, setCurrentEditingItem] = useState<TrackItem | null>(null);
   const [form] = Form.useForm();
   const [clipModalVisible, setClipModalVisible] = useState(false);
   const [clipStart, setClipStart] = useState(0);
   const [clipEnd, setClipEnd] = useState(duration || 10);
-  const [zoom, setZoom] = useState(1); // 1 = 100%
+  const [zoom, setZoom] = useState(1);
   const [scrollX, setScrollX] = useState(0);
-  const [viewWidth, setViewWidth] = useState(800); // 默认视口宽度
+  const [viewWidth, setViewWidth] = useState(800);
 
-  // 计算缩放后的时间轴总宽度
   const getTimelineWidth = () => {
     return viewWidth * zoom;
   };
@@ -53,7 +51,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     return (time / duration) * timelineWidth - scrollX;
   };
 
-  // 缩放控制
   const handleZoomIn = () => {
     setZoom(prev => Math.min(10, prev * 1.2));
   };
@@ -67,7 +64,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     setScrollX(0);
   };
 
-  // 监听容器宽度变化
   useEffect(() => {
     const updateViewWidth = () => {
       if (scrollContainerRef.current) {
@@ -75,7 +71,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
         setViewWidth(rect.width);
       }
     };
-
     updateViewWidth();
     window.addEventListener('resize', updateViewWidth);
     return () => window.removeEventListener('resize', updateViewWidth);
@@ -98,15 +93,9 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
 
     if (isSelecting) {
       setSelectionEnd(time);
-    } else if (isDragging && dragType && dragItemType) {
+    } else if (isDragging && dragType) {
       const deltaTime = time - getTimeFromX(dragStartX);
-      let item: Label | Subtitle | undefined;
-      
-      if (dragItemType === 'label') {
-        item = channel.labels.find(l => l.id === isDragging);
-      } else {
-        item = channel.subtitles.find(s => s.id === isDragging);
-      }
+      const item = channel.items.find(i => i.id === isDragging);
       
       if (!item) return;
 
@@ -114,59 +103,32 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
         const newStart = dragStartTime + deltaTime;
         const newEnd = dragEndTime + deltaTime;
         if (newStart >= 0 && newEnd <= duration) {
-          if (dragItemType === 'label') {
-            dispatch({
-              type: 'UPDATE_LABEL',
-              channelId: channel.id,
-              labelId: isDragging,
-              updates: { startTime: newStart, endTime: newEnd },
-            });
-          } else {
-            dispatch({
-              type: 'UPDATE_SUBTITLE',
-              channelId: channel.id,
-              subtitleId: isDragging,
-              updates: { startTime: newStart, endTime: newEnd },
-            });
-          }
+          dispatch({
+            type: 'UPDATE_ITEM',
+            channelId: channel.id,
+            itemId: isDragging,
+            updates: { startTime: newStart, endTime: newEnd },
+          });
         }
       } else if (dragType === 'start') {
         const newStart = Math.max(0, dragStartTime + deltaTime);
         if (newStart < item.endTime) {
-          if (dragItemType === 'label') {
-            dispatch({
-              type: 'UPDATE_LABEL',
-              channelId: channel.id,
-              labelId: isDragging,
-              updates: { startTime: newStart },
-            });
-          } else {
-            dispatch({
-              type: 'UPDATE_SUBTITLE',
-              channelId: channel.id,
-              subtitleId: isDragging,
-              updates: { startTime: newStart },
-            });
-          }
+          dispatch({
+            type: 'UPDATE_ITEM',
+            channelId: channel.id,
+            itemId: isDragging,
+            updates: { startTime: newStart },
+          });
         }
       } else if (dragType === 'end') {
         const newEnd = Math.min(duration, dragEndTime + deltaTime);
         if (newEnd > item.startTime) {
-          if (dragItemType === 'label') {
-            dispatch({
-              type: 'UPDATE_LABEL',
-              channelId: channel.id,
-              labelId: isDragging,
-              updates: { endTime: newEnd },
-            });
-          } else {
-            dispatch({
-              type: 'UPDATE_SUBTITLE',
-              channelId: channel.id,
-              subtitleId: isDragging,
-              updates: { endTime: newEnd },
-            });
-          }
+          dispatch({
+            type: 'UPDATE_ITEM',
+            channelId: channel.id,
+            itemId: isDragging,
+            updates: { endTime: newEnd },
+          });
         }
       }
     }
@@ -178,7 +140,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
       const end = Math.max(selectionStart, selectionEnd);
       if (end - start > 0.1) {
         dispatch({
-          type: 'ADD_LABEL',
+          type: 'ADD_ITEM',
           channelId: channel.id,
           startTime: start,
           endTime: end,
@@ -189,19 +151,16 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     setIsSelecting(false);
     setIsDragging(null);
     setDragType(null);
-    setDragItemType(null);
   };
 
   const startDrag = (
     e: React.MouseEvent,
     itemId: string,
-    itemType: 'label' | 'subtitle',
     type: 'start' | 'end' | 'move',
-    item: Label | Subtitle
+    item: TrackItem
   ) => {
     e.stopPropagation();
     setIsDragging(itemId);
-    setDragItemType(itemType);
     setDragType(type);
     const rect = containerRef.current!.getBoundingClientRect();
     setDragStartX(e.clientX - rect.left);
@@ -209,35 +168,21 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     setDragEndTime(item.endTime);
   };
 
-  const startEdit = (item: Label | Subtitle, type: 'label' | 'subtitle') => {
-    setEditingItem({ id: item.id, type });
-    setEditText(item.text);
-  };
-
   const saveEdit = () => {
     if (editingItem) {
-      if (editingItem.type === 'label') {
-        dispatch({
-          type: 'UPDATE_LABEL',
-          channelId: channel.id,
-          labelId: editingItem.id,
-          updates: { text: editText },
-        });
-      } else {
-        dispatch({
-          type: 'UPDATE_SUBTITLE',
-          channelId: channel.id,
-          subtitleId: editingItem.id,
-          updates: { text: editText },
-        });
-      }
+      dispatch({
+        type: 'UPDATE_ITEM',
+        channelId: channel.id,
+        itemId: editingItem,
+        updates: { text: editText },
+      });
       setEditingItem(null);
     }
   };
 
-  const openSettings = (e: React.MouseEvent, item: Label | Subtitle, type: 'label' | 'subtitle') => {
+  const openSettings = (e: React.MouseEvent, item: TrackItem) => {
     e.stopPropagation();
-    setCurrentEditingItem({ item, type });
+    setCurrentEditingItem(item);
     form.setFieldsValue({
       text: item.text,
       startTime: item.startTime,
@@ -249,69 +194,24 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
   const saveSettings = () => {
     form.validateFields().then((values) => {
       if (currentEditingItem) {
-        if (currentEditingItem.type === 'label') {
-          dispatch({
-            type: 'UPDATE_LABEL',
-            channelId: channel.id,
-            labelId: currentEditingItem.item.id,
-            updates: {
-              text: values.text,
-              startTime: values.startTime,
-              endTime: values.endTime,
-            },
-          });
-        } else {
-          dispatch({
-            type: 'UPDATE_SUBTITLE',
-            channelId: channel.id,
-            subtitleId: currentEditingItem.item.id,
-            updates: {
-              text: values.text,
-              startTime: values.startTime,
-              endTime: values.endTime,
-            },
-          });
-        }
+        dispatch({
+          type: 'UPDATE_ITEM',
+          channelId: channel.id,
+          itemId: currentEditingItem.id,
+          updates: {
+            text: values.text,
+            startTime: values.startTime,
+            endTime: values.endTime,
+          },
+        });
       }
       setSettingsModalVisible(false);
     });
   };
 
-  const handleDoubleClick = (e: React.MouseEvent, item: Label | Subtitle, type: 'label' | 'subtitle') => {
+  const handleDoubleClick = (e: React.MouseEvent, item: TrackItem) => {
     e.stopPropagation();
-    openSettings(e, item, type);
-  };
-
-  const convertLabelToSubtitle = (e: React.MouseEvent, label: Label) => {
-    e.stopPropagation();
-    dispatch({
-      type: 'ADD_SUBTITLE',
-      channelId: channel.id,
-      startTime: label.startTime,
-      endTime: label.endTime,
-      text: label.text,
-    });
-    dispatch({
-      type: 'DELETE_LABEL',
-      channelId: channel.id,
-      labelId: label.id,
-    });
-  };
-
-  const convertSubtitleToLabel = (e: React.MouseEvent, subtitle: Subtitle) => {
-    e.stopPropagation();
-    dispatch({
-      type: 'ADD_LABEL',
-      channelId: channel.id,
-      startTime: subtitle.startTime,
-      endTime: subtitle.endTime,
-      text: subtitle.text,
-    });
-    dispatch({
-      type: 'DELETE_SUBTITLE',
-      channelId: channel.id,
-      subtitleId: subtitle.id,
-    });
+    openSettings(e, item);
   };
 
   const openClipModal = (start: number, end: number) => {
@@ -321,40 +221,28 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
   };
 
   const handleClipToNewProject = () => {
-    // 剪切逻辑：更新所有标签和字幕的时间
     const clipDuration = clipEnd - clipStart;
     
-    // 处理所有通道，不是只处理当前通道
     const processedChannels = channels.map(ch => {
       const newChannelId = uuidv4();
       return {
         ...ch,
         id: newChannelId,
-        labels: ch.labels
-          .filter(l => l.endTime > clipStart && l.startTime < clipEnd)
-          .map(l => ({
-            ...l,
+        items: ch.items
+          .filter(i => i.endTime > clipStart && i.startTime < clipEnd)
+          .map(i => ({
+            ...i,
             id: uuidv4(),
-            channelId: newChannelId, // 更新channelId为新通道的id
-            startTime: Math.max(0, l.startTime - clipStart),
-            endTime: Math.min(clipDuration, l.endTime - clipStart),
-          })),
-        subtitles: ch.subtitles
-          .filter(s => s.endTime > clipStart && s.startTime < clipEnd)
-          .map(s => ({
-            ...s,
-            id: uuidv4(),
-            startTime: Math.max(0, s.startTime - clipStart),
-            endTime: Math.min(clipDuration, s.endTime - clipStart),
+            startTime: Math.max(0, i.startTime - clipStart),
+            endTime: Math.min(clipDuration, i.endTime - clipStart),
           })),
       };
     });
-    
-    // 创建新项目
+
     const newProject = {
       id: uuidv4(),
       name: `${state.project?.name || '项目'}_剪切_${formatDetailedTime(clipStart)}_${formatDetailedTime(clipEnd)}`,
-      audioFiles: currentAudioFile ? [currentAudioFile] : [], // 保留原音频文件
+      audioFiles: currentAudioFile ? [currentAudioFile] : [],
       currentAudioId: currentAudioFile?.id || null,
       channels: processedChannels,
       createdAt: Date.now(),
@@ -367,125 +255,57 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
   };
 
   const handleDeleteSegment = () => {
-    // 删除片段逻辑
     const segmentDuration = clipEnd - clipStart;
     
-    // 对所有通道进行处理
     channels.forEach(ch => {
-      // 更新标签
-      ch.labels.forEach(label => {
-        if (label.endTime <= clipStart) {
-          // 标签在删除段前，无需更改
-        } else if (label.startTime >= clipEnd) {
-          // 标签在删除段后，向前移动
+      ch.items.forEach(item => {
+        if (item.endTime <= clipStart) {
+        } else if (item.startTime >= clipEnd) {
           dispatch({
-            type: 'UPDATE_LABEL',
+            type: 'UPDATE_ITEM',
             channelId: ch.id,
-            labelId: label.id,
+            itemId: item.id,
             updates: {
-              startTime: label.startTime - segmentDuration,
-              endTime: label.endTime - segmentDuration,
+              startTime: item.startTime - segmentDuration,
+              endTime: item.endTime - segmentDuration,
             },
           });
-        } else if (label.startTime < clipStart && label.endTime > clipEnd) {
-          // 标签包含删除段，分割为两个标签
+        } else if (item.startTime < clipStart && item.endTime > clipEnd) {
           dispatch({
-            type: 'UPDATE_LABEL',
+            type: 'UPDATE_ITEM',
             channelId: ch.id,
-            labelId: label.id,
+            itemId: item.id,
             updates: { endTime: clipStart },
           });
           dispatch({
-            type: 'ADD_LABEL',
+            type: 'ADD_ITEM',
             channelId: ch.id,
             startTime: clipStart,
-            endTime: label.endTime - segmentDuration,
-            text: label.text,
+            endTime: item.endTime - segmentDuration,
+            text: item.text,
           });
-        } else if (label.startTime < clipStart && label.endTime <= clipEnd) {
-          // 标签与删除段前部分重叠
+        } else if (item.startTime < clipStart && item.endTime <= clipEnd) {
           dispatch({
-            type: 'UPDATE_LABEL',
+            type: 'UPDATE_ITEM',
             channelId: ch.id,
-            labelId: label.id,
+            itemId: item.id,
             updates: { endTime: clipStart },
           });
-        } else if (label.startTime >= clipStart && label.endTime > clipEnd) {
-          // 标签与删除段后部分重叠
+        } else if (item.startTime >= clipStart && item.endTime > clipEnd) {
           dispatch({
-            type: 'UPDATE_LABEL',
+            type: 'UPDATE_ITEM',
             channelId: ch.id,
-            labelId: label.id,
+            itemId: item.id,
             updates: {
               startTime: clipStart,
-              endTime: label.endTime - segmentDuration,
+              endTime: item.endTime - segmentDuration,
             },
           });
         } else {
-          // 标签完全在删除段内，删除
           dispatch({
-            type: 'DELETE_LABEL',
+            type: 'DELETE_ITEM',
             channelId: ch.id,
-            labelId: label.id,
-          });
-        }
-      });
-      
-      // 更新字幕
-      ch.subtitles.forEach(subtitle => {
-        if (subtitle.endTime <= clipStart) {
-          // 字幕在删除段前，无需更改
-        } else if (subtitle.startTime >= clipEnd) {
-          // 字幕在删除段后，向前移动
-          dispatch({
-            type: 'UPDATE_SUBTITLE',
-            channelId: ch.id,
-            subtitleId: subtitle.id,
-            updates: {
-              startTime: subtitle.startTime - segmentDuration,
-              endTime: subtitle.endTime - segmentDuration,
-            },
-          });
-        } else if (subtitle.startTime < clipStart && subtitle.endTime > clipEnd) {
-          // 字幕包含删除段，分割为两个字幕
-          dispatch({
-            type: 'UPDATE_SUBTITLE',
-            channelId: ch.id,
-            subtitleId: subtitle.id,
-            updates: { endTime: clipStart },
-          });
-          dispatch({
-            type: 'ADD_SUBTITLE',
-            channelId: ch.id,
-            startTime: clipStart,
-            endTime: subtitle.endTime - segmentDuration,
-            text: subtitle.text,
-          });
-        } else if (subtitle.startTime < clipStart && subtitle.endTime <= clipEnd) {
-          // 字幕与删除段前部分重叠
-          dispatch({
-            type: 'UPDATE_SUBTITLE',
-            channelId: ch.id,
-            subtitleId: subtitle.id,
-            updates: { endTime: clipStart },
-          });
-        } else if (subtitle.startTime >= clipStart && subtitle.endTime > clipEnd) {
-          // 字幕与删除段后部分重叠
-          dispatch({
-            type: 'UPDATE_SUBTITLE',
-            channelId: ch.id,
-            subtitleId: subtitle.id,
-            updates: {
-              startTime: clipStart,
-              endTime: subtitle.endTime - segmentDuration,
-            },
-          });
-        } else {
-          // 字幕完全在删除段内，删除
-          dispatch({
-            type: 'DELETE_SUBTITLE',
-            channelId: ch.id,
-            subtitleId: subtitle.id,
+            itemId: item.id,
           });
         }
       });
@@ -495,12 +315,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     setClipModalVisible(false);
   };
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${String(secs).padStart(2, '0')}`;
-  };
-
   const formatDetailedTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -508,14 +322,8 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
     return `${mins}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   };
 
-  const allItems = [
-    ...channel.labels.map(l => ({ ...l, type: 'label' })),
-    ...channel.subtitles.map(s => ({ ...s, type: 'subtitle' })),
-  ].sort((a, b) => a.startTime - b.startTime);
-
   return (
     <div>
-      {/* 缩放控制栏 */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -561,7 +369,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
         </div>
       </div>
 
-      {/* 滚动容器 */}
       <div
         ref={scrollContainerRef}
         style={{
@@ -578,7 +385,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
           style={{
             position: 'relative',
             width: getTimelineWidth(),
-            height: 100,
+            height: 60,
             background: '#f0f0f0',
             borderRadius: 8,
             cursor: 'crosshair',
@@ -591,9 +398,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-          {/* 时间轴刻度线 - 根据缩放动态调整密度 */}
           {(() => {
-            // 根据缩放比例调整刻度间隔
             let interval = 5;
             if (zoom >= 2) interval = 1;
             else if (zoom >= 5) interval = 0.5;
@@ -604,7 +409,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
               const time = i * interval;
               const x = getXFromTime(time);
               
-              // 只显示在可见范围内或附近的刻度
               if (x < -100 || x > viewWidth + 100) return null;
               
               const isMajor = time % 5 === 0;
@@ -672,12 +476,11 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
           </div>
         )}
 
-        {allItems.map(item => {
+        {channel.items.map(item => {
           const left = getXFromTime(item.startTime);
           const right = getXFromTime(item.endTime);
           const width = right - left;
           
-          // 只渲染在可见范围内或附近的项目
           if (right < -100 || left > viewWidth + 100) return null;
           
           return (
@@ -685,67 +488,64 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
               key={item.id}
               style={{
                 position: 'absolute',
-                top: item.type === 'label' ? 8 : 52,
-                height: 36,
+                top: 8,
+                height: 40,
                 left: `${left}px`,
-                width: `${Math.max(width, 30)}px`,
-                background: item.type === 'label' ? channel.color : '#52c41a',
-                borderRadius: 4,
+                width: `${Math.max(width, 40)}px`,
+                background: channel.color,
+                borderRadius: 6,
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'center',
                 color: 'white',
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 500,
                 cursor: 'move',
                 userSelect: 'none',
-                minWidth: 30,
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                minWidth: 40,
+                boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
                 zIndex: 5,
               }}
-              onMouseDown={(e) => startDrag(e, item.id, item.type, 'move', item)}
-              onDoubleClick={(e) => handleDoubleClick(e, item, item.type)}
+              onMouseDown={(e) => startDrag(e, item.id, 'move', item)}
+              onDoubleClick={(e) => handleDoubleClick(e, item)}
             >
-              {/* 拖动句柄 - 左 */}
               <div
                 style={{
                   position: 'absolute',
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  width: 10,
+                  width: 12,
                   cursor: 'w-resize',
-                  background: 'rgba(0,0,0,0.15)',
-                  borderRadius: '4px 0 0 4px',
+                  background: 'rgba(0,0,0,0.2)',
+                  borderRadius: '6px 0 0 6px',
                   zIndex: 10,
                 }}
-                onMouseDown={(e) => startDrag(e, item.id, item.type, 'start', item)}
+                onMouseDown={(e) => startDrag(e, item.id, 'start', item)}
               />
-              {/* 拖动句柄 - 右 */}
               <div
                 style={{
                   position: 'absolute',
                   right: 0,
                   top: 0,
                   bottom: 0,
-                  width: 10,
+                  width: 12,
                   cursor: 'e-resize',
-                  background: 'rgba(0,0,0,0.15)',
-                  borderRadius: '0 4px 4px 0',
+                  background: 'rgba(0,0,0,0.2)',
+                  borderRadius: '0 6px 6px 0',
                   zIndex: 10,
                 }}
-                onMouseDown={(e) => startDrag(e, item.id, item.type, 'end', item)}
+                onMouseDown={(e) => startDrag(e, item.id, 'end', item)}
               />
 
-              {/* 内容显示 */}
               <div style={{ 
-                padding: '2px 12px', 
+                padding: '4px 14px', 
                 overflow: 'hidden', 
                 textOverflow: 'ellipsis', 
                 whiteSpace: 'nowrap',
-                lineHeight: 1.2,
+                lineHeight: 1.3,
               }}>
-                {editingItem?.id === item.id && editingItem?.type === item.type ? (
+                {editingItem === item.id ? (
                   <AntInput
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
@@ -755,7 +555,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
                     size="small"
                     style={{
                       width: '100%',
-                      fontSize: 11,
+                      fontSize: 12,
                       border: 'none',
                       background: 'rgba(255,255,255,0.95)',
                       color: '#333',
@@ -763,17 +563,16 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
                   />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <div style={{ fontWeight: 600, fontSize: 11 }}>
-                      {item.text || `${formatDetailedTime(item.startTime)} - ${formatDetailedTime(item.endTime)}`}
+                    <div style={{ fontWeight: 600, fontSize: 12 }}>
+                      {item.text || `标签`}
                     </div>
-                    <div style={{ fontSize: 9, opacity: 0.85 }}>
+                    <div style={{ fontSize: 10, opacity: 0.85 }}>
                       {formatDetailedTime(item.startTime)} - {formatDetailedTime(item.endTime)}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* 操作按钮 */}
               <div style={{ 
                 position: 'absolute', 
                 right: 14, 
@@ -796,22 +595,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
                   </Tooltip>
                 )}
                 
-                <Tooltip title="转换为字幕/标签">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={item.type === 'label' ? <SettingOutlined style={{ color: 'white', fontSize: 10 }} /> : <EditOutlined style={{ color: 'white', fontSize: 10 }} />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (item.type === 'label') {
-                        convertLabelToSubtitle(e, item as Label);
-                      } else {
-                        convertSubtitleToLabel(e, item as Subtitle);
-                      }
-                    }}
-                  />
-                </Tooltip>
-                
                 <Tooltip title="编辑">
                   <Button
                     type="text"
@@ -819,28 +602,20 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
                     icon={<EditOutlined style={{ color: 'white', fontSize: 12 }} />}
                     onClick={(e) => {
                       e.stopPropagation();
-                      openSettings(e, item, item.type);
+                      openSettings(e, item);
                     }}
                   />
                 </Tooltip>
                 
                 <Popconfirm
-                  title={`确定删除此${item.type === 'label' ? '标签' : '字幕'}？`}
+                  title="确定删除此标签？"
                   onConfirm={(e) => {
                     e?.stopPropagation();
-                    if (item.type === 'label') {
-                      dispatch({
-                        type: 'DELETE_LABEL',
-                        channelId: channel.id,
-                        labelId: item.id,
-                      });
-                    } else {
-                      dispatch({
-                        type: 'DELETE_SUBTITLE',
-                        channelId: channel.id,
-                        subtitleId: item.id,
-                      });
-                    }
+                    dispatch({
+                      type: 'DELETE_ITEM',
+                      channelId: channel.id,
+                      itemId: item.id,
+                    });
                   }}
                   okText="确定"
                   cancelText="取消"
@@ -853,28 +628,12 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
                   />
                 </Popconfirm>
               </div>
-
-              {/* 类型标识 */}
-              <div style={{
-                position: 'absolute',
-                top: -16,
-                left: 0,
-                fontSize: 10,
-                background: item.type === 'label' ? channel.color : '#52c41a',
-                color: 'white',
-                padding: '1px 6px',
-                borderRadius: '4px 4px 0 0',
-                fontWeight: 600,
-              }}>
-                {item.type === 'label' ? '标签' : '字幕'}
-              </div>
             </div>
           );
         })}
         </div>
       </div>
 
-      {/* 设置弹窗 */}
       <Modal
         title="设置"
         open={settingsModalVisible}
@@ -921,7 +680,6 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
         </Form>
       </Modal>
 
-      {/* 音频剪切弹窗 */}
       <Modal
         title="音频片段操作"
         open={clipModalVisible}
@@ -938,7 +696,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
               <InputNumber
                 style={{ width: '100%' }}
                 value={clipStart}
-                onChange={setClipStart}
+                onChange={(value) => value !== null && setClipStart(value)}
                 min={0}
                 max={clipEnd}
                 step={0.01}
@@ -949,7 +707,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
               <InputNumber
                 style={{ width: '100%' }}
                 value={clipEnd}
-                onChange={setClipEnd}
+                onChange={(value) => value !== null && setClipEnd(value)}
                 min={clipStart}
                 max={duration}
                 step={0.01}
@@ -973,7 +731,7 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
             block
             onClick={handleDeleteSegment}
           >
-            删除该片段（并更新标签和字幕时间）
+            删除该片段（并更新标签时间）
           </Button>
         </Space>
       </Modal>

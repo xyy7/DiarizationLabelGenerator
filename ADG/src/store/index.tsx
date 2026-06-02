@@ -1,8 +1,14 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { AppState, Project, Channel, AudioFile, Label, Subtitle } from '../types';
-import { createLabel, getRandomColor } from '../utils';
-import { createSubtitle } from '../utils/subtitle';
+import { AppState, Project, Channel, AudioFile, TrackItem } from '../types';
+import { getRandomColor } from '../utils';
+
+const createTrackItem = (startTime: number, endTime: number, text: string = ''): TrackItem => ({
+  id: uuidv4(),
+  startTime,
+  endTime,
+  text,
+});
 
 type Action =
   | { type: 'CREATE_PROJECT'; name: string }
@@ -11,12 +17,9 @@ type Action =
   | { type: 'ADD_CHANNEL'; name: string }
   | { type: 'UPDATE_CHANNEL'; channelId: string; updates: Partial<Channel> }
   | { type: 'DELETE_CHANNEL'; channelId: string }
-  | { type: 'ADD_LABEL'; channelId: string; startTime: number; endTime: number; text?: string }
-  | { type: 'UPDATE_LABEL'; channelId: string; labelId: string; updates: Partial<Label> }
-  | { type: 'DELETE_LABEL'; channelId: string; labelId: string }
-  | { type: 'ADD_SUBTITLE'; channelId: string; startTime: number; endTime: number; text?: string }
-  | { type: 'UPDATE_SUBTITLE'; channelId: string; subtitleId: string; updates: Partial<Subtitle> }
-  | { type: 'DELETE_SUBTITLE'; channelId: string; subtitleId: string }
+  | { type: 'ADD_ITEM'; channelId: string; startTime: number; endTime: number; text?: string }
+  | { type: 'UPDATE_ITEM'; channelId: string; itemId: string; updates: Partial<TrackItem> }
+  | { type: 'DELETE_ITEM'; channelId: string; itemId: string }
   | { type: 'SET_PLAYING'; isPlaying: boolean }
   | { type: 'SET_CURRENT_TIME'; time: number }
   | { type: 'SET_DURATION'; duration: number }
@@ -78,8 +81,7 @@ const appReducer = (state: AppState, action: Action): AppState => {
         id: uuidv4(),
         name: action.name,
         color: getRandomColor(),
-        labels: [],
-        subtitles: [],
+        items: [],
       };
       return {
         ...state,
@@ -114,7 +116,7 @@ const appReducer = (state: AppState, action: Action): AppState => {
         },
       };
 
-    case 'ADD_LABEL':
+    case 'ADD_ITEM':
       if (!state.project) return state;
       return {
         ...state,
@@ -122,14 +124,14 @@ const appReducer = (state: AppState, action: Action): AppState => {
           ...state.project,
           channels: state.project.channels.map(ch =>
             ch.id === action.channelId
-              ? { ...ch, labels: [...ch.labels, createLabel(action.channelId, action.startTime, action.endTime, action.text)] }
+              ? { ...ch, items: [...ch.items, createTrackItem(action.startTime, action.endTime, action.text)] }
               : ch
           ),
           updatedAt: Date.now(),
         },
       };
 
-    case 'UPDATE_LABEL':
+    case 'UPDATE_ITEM':
       if (!state.project) return state;
       return {
         ...state,
@@ -139,8 +141,8 @@ const appReducer = (state: AppState, action: Action): AppState => {
             ch.id === action.channelId
               ? {
                   ...ch,
-                  labels: ch.labels.map(label =>
-                    label.id === action.labelId ? { ...label, ...action.updates } : label
+                  items: ch.items.map(item =>
+                    item.id === action.itemId ? { ...item, ...action.updates } : item
                   ),
                 }
               : ch
@@ -149,7 +151,7 @@ const appReducer = (state: AppState, action: Action): AppState => {
         },
       };
 
-    case 'DELETE_LABEL':
+    case 'DELETE_ITEM':
       if (!state.project) return state;
       return {
         ...state,
@@ -157,57 +159,7 @@ const appReducer = (state: AppState, action: Action): AppState => {
           ...state.project,
           channels: state.project.channels.map(ch =>
             ch.id === action.channelId
-              ? { ...ch, labels: ch.labels.filter(label => label.id !== action.labelId) }
-              : ch
-          ),
-          updatedAt: Date.now(),
-        },
-      };
-
-    case 'ADD_SUBTITLE':
-      if (!state.project) return state;
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          channels: state.project.channels.map(ch =>
-            ch.id === action.channelId
-              ? { ...ch, subtitles: [...ch.subtitles, createSubtitle(action.startTime, action.endTime, action.text)] }
-              : ch
-          ),
-          updatedAt: Date.now(),
-        },
-      };
-
-    case 'UPDATE_SUBTITLE':
-      if (!state.project) return state;
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          channels: state.project.channels.map(ch =>
-            ch.id === action.channelId
-              ? {
-                  ...ch,
-                  subtitles: ch.subtitles.map(sub =>
-                    sub.id === action.subtitleId ? { ...sub, ...action.updates } : sub
-                  ),
-                }
-              : ch
-          ),
-          updatedAt: Date.now(),
-        },
-      };
-
-    case 'DELETE_SUBTITLE':
-      if (!state.project) return state;
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          channels: state.project.channels.map(ch =>
-            ch.id === action.channelId
-              ? { ...ch, subtitles: ch.subtitles.filter(sub => sub.id !== action.subtitleId) }
+              ? { ...ch, items: ch.items.filter(item => item.id !== action.itemId) }
               : ch
           ),
           updatedAt: Date.now(),
