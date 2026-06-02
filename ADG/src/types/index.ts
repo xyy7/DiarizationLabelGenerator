@@ -12,6 +12,13 @@ export interface Channel {
   items: TrackItem[];
 }
 
+export interface AudioFile {
+  id: string;
+  name: string;
+  url?: string;
+  file?: File;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -20,14 +27,6 @@ export interface Project {
   channels: Channel[];
   createdAt: number;
   updatedAt: number;
-}
-
-export interface AudioFile {
-  id: string;
-  name: string;
-  url: string;
-  file?: File;
-  duration?: number;
 }
 
 export interface AppState {

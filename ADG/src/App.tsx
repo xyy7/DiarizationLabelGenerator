@@ -5,6 +5,7 @@ import {
   FolderOpenOutlined,
   UploadOutlined,
   SaveOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import AudioPlayer from './components/AudioPlayer';
@@ -19,11 +20,38 @@ const { Title } = Typography;
 const AppContent: React.FC = () => {
   const { state, dispatch } = useAppContext();
 
-  // 自动保存到 localStorage
+  // 自动保存到 localStorage，只保存标签和字幕信息，移除失效的音频 URL
   useEffect(() => {
     if (state.project) {
-      localStorage.setItem('audio_label_project', JSON.stringify(state.project));
+      // 保存时移除音频的 blob URL 和 file 引用（这些在刷新后会失效）
+      const projectToSave = {
+        ...state.project,
+        audioFiles: state.project.audioFiles.map(audio => ({
+          id: audio.id,
+          name: audio.name,
+          // 不保存 url 和 file，因为刷新后会失效
+        }))
+      };
+      localStorage.setItem('audio_label_project', JSON.stringify(projectToSave));
     }
+  }, [state.project]);
+
+  // 页面刷新前确保保存
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (state.project) {
+        const projectToSave = {
+          ...state.project,
+          audioFiles: state.project.audioFiles.map(audio => ({
+            id: audio.id,
+            name: audio.name,
+          }))
+        };
+        localStorage.setItem('audio_label_project', JSON.stringify(projectToSave));
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [state.project]);
 
   // 加载保存的项目
@@ -33,7 +61,11 @@ const AppContent: React.FC = () => {
       try {
         const project = JSON.parse(saved);
         dispatch({ type: 'LOAD_PROJECT', project });
-        message.success('已加载上次保存的项目');
+        if (project.audioFiles.length > 0) {
+          message.info('已加载上次保存的项目，请重新导入音频文件以播放');
+        } else {
+          message.success('已加载上次保存的项目');
+        }
       } catch (e) {
         console.error('Failed to load project:', e);
       }
@@ -192,17 +224,55 @@ const AppContent: React.FC = () => {
                   size="small"
                   bordered
                   dataSource={state.project.audioFiles}
-                  renderItem={(file) => (
-                    <List.Item
-                      style={{
-                        cursor: 'pointer',
-                        background: file.id === state.project?.currentAudioId ? '#e6f7ff' : 'transparent',
-                      }}
-                      onClick={() => dispatch({ type: 'SET_CURRENT_AUDIO', audioId: file.id })}
-                    >
-                      {file.name}
-                    </List.Item>
-                  )}
+                  renderItem={(file) => {
+                    const hasAudio = !!file.url;
+                    return (
+                      <List.Item
+                        style={{
+                          cursor: hasAudio ? 'pointer' : 'default',
+                          background: file.id === state.project?.currentAudioId ? '#e6f7ff' : 'transparent',
+                          color: hasAudio ? undefined : '#999',
+                        }}
+                        onClick={() => {
+                          if (hasAudio) {
+                            dispatch({ type: 'SET_CURRENT_AUDIO', audioId: file.id });
+                          } else {
+                            // 没有音频时，提示用户重新导入
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = 'audio/*';
+                            input.onchange = (e) => {
+                              const selectedFile = (e.target as HTMLInputElement).files?.[0];
+                              if (selectedFile) {
+                                // 替换现有音频文件
+                                const newAudioFile: AudioFile = {
+                                  id: file.id,
+                                  name: selectedFile.name,
+                                  url: URL.createObjectURL(selectedFile),
+                                  file: selectedFile,
+                                };
+                                // 更新音频文件列表
+                                const updatedAudioFiles = (state.project?.audioFiles || []).map(f => 
+                                  f.id === file.id ? newAudioFile : f
+                                );
+                                dispatch({ type: 'LOAD_PROJECT', project: { 
+                                  ...state.project!, 
+                                  audioFiles: updatedAudioFiles,
+                                  currentAudioId: file.id,
+                                }});
+                                message.success(`已重新导入音频: ${selectedFile.name}`);
+                              }
+                            };
+                            input.click();
+                          }
+                        }}
+                      >
+                        {!hasAudio && <FileTextOutlined style={{ marginRight: 8, color: '#faad14' }} />}
+                        {file.name}
+                        {!hasAudio && <span style={{ fontSize: 12, color: '#faad14', marginLeft: 'auto' }}>需要重新导入</span>}
+                      </List.Item>
+                    );
+                  }}
                 />
               </div>
 
@@ -216,7 +286,7 @@ const AppContent: React.FC = () => {
           </div>
         </Sider>
         <Content style={{ padding: 24, background: '#f0f2f5', overflow: 'auto' }}>
-          {currentAudio && (
+          {currentAudio && currentAudio.url && (
             <div style={{ marginBottom: 24 }}>
               <AudioPlayer 
                 audioUrl={currentAudio.url}
@@ -226,18 +296,65 @@ const AppContent: React.FC = () => {
               />
             </div>
           )}
+          {currentAudio && !currentAudio.url && (
+            <div style={{ 
+              marginBottom: 24, 
+              padding: 24, 
+              background: '#fffbe6', 
+              border: '1px solid #ffe58f',
+              borderRadius: 8,
+              textAlign: 'center'
+            }}>
+              <FileTextOutlined style={{ fontSize: 24, color: '#faad14', marginBottom: 8 }} />
+              <div style={{ color: '#8c6c00' }}>
+                音频文件 "{currentAudio.name}" 需要重新导入
+              </div>
+              <Button 
+                type="primary" 
+                style={{ marginTop: 12 }}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'audio/*';
+                  input.onchange = (e) => {
+                    const selectedFile = (e.target as HTMLInputElement).files?.[0];
+                    if (selectedFile) {
+                      const newAudioFile: AudioFile = {
+                        id: currentAudio.id,
+                        name: selectedFile.name,
+                        url: URL.createObjectURL(selectedFile),
+                        file: selectedFile,
+                      };
+                      const updatedAudioFiles = (state.project?.audioFiles || []).map(f => 
+                        f.id === currentAudio.id ? newAudioFile : f
+                      );
+                      dispatch({ type: 'LOAD_PROJECT', project: { 
+                        ...state.project!, 
+                        audioFiles: updatedAudioFiles,
+                        currentAudioId: currentAudio.id,
+                      }});
+                      message.success(`已重新导入音频: ${selectedFile.name}`);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                重新导入音频
+              </Button>
+            </div>
+          )}
 
-          {state.project.channels.map(channel => (
+          {state.project?.channels.map(channel => (
             <ChannelPanel
               key={channel.id}
               channel={channel}
-              channels={state.project.channels}
+              channels={state.project?.channels || []}
               duration={state.duration || 100}
               currentAudioFile={currentAudio}
             />
           ))}
 
-          {state.project.channels.length === 0 && (
+          {state.project?.channels.length === 0 && (
             <div style={{ textAlign: 'center', padding: 64, color: '#999' }}>
               <p>请先添加说话人通道，然后开始标记标签</p>
             </div>
