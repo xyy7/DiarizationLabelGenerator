@@ -1,12 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Subtitle } from '../types';
-
-export const createSubtitle = (startTime: number, endTime: number, text: string = ''): Subtitle => ({
-  id: uuidv4(),
-  startTime,
-  endTime,
-  text,
-});
+import { TrackItem } from '../types';
 
 export const formatTime = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
@@ -22,15 +15,15 @@ export const parseTime = (timeStr: string): number => {
   return h * 3600 + m * 60 + s + (ms ? Number(ms) / 1000 : 0);
 };
 
-export const exportSRT = (subtitles: Subtitle[]): string => {
-  return subtitles
+export const exportSRT = (items: TrackItem[]): string => {
+  return items
     .sort((a, b) => a.startTime - b.startTime)
-    .map((sub, index) => `${index + 1}\n${formatTime(sub.startTime)} --> ${formatTime(sub.endTime)}\n${sub.text}\n`)
+    .map((item, index) => `${index + 1}\n${formatTime(item.startTime)} --> ${formatTime(item.endTime)}\n${item.text}\n`)
     .join('\n');
 };
 
-export const importSRT = (srtContent: string): Subtitle[] => {
-  const subtitles: Subtitle[] = [];
+export const importSRT = (srtContent: string): TrackItem[] => {
+  const items: TrackItem[] = [];
   const blocks = srtContent.trim().split(/\n\s*\n/);
   
   blocks.forEach(block => {
@@ -39,7 +32,7 @@ export const importSRT = (srtContent: string): Subtitle[] => {
       const timeLine = lines[1];
       const [startStr, endStr] = timeLine.split(' --> ');
       const text = lines.slice(2).join('\n');
-      subtitles.push({
+      items.push({
         id: uuidv4(),
         startTime: parseTime(startStr),
         endTime: parseTime(endStr),
@@ -48,5 +41,5 @@ export const importSRT = (srtContent: string): Subtitle[] => {
     }
   });
   
-  return subtitles;
+  return items;
 };

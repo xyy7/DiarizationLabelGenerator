@@ -1,25 +1,15 @@
-export interface Subtitle {
+export interface TrackItem {
   id: string;
   startTime: number;
   endTime: number;
   text: string;
-}
-
-export interface Label {
-  id: string;
-  channelId: string;
-  startTime: number;
-  endTime: number;
-  text: string;
-  color?: string;
 }
 
 export interface Channel {
   id: string;
   name: string;
   color: string;
-  labels: Label[];
-  subtitles: Subtitle[];
+  items: TrackItem[];
 }
 
 export interface Project {

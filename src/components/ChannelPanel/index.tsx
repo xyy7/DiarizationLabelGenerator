@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Button, Input, Popconfirm, Tabs, Table, Space } from 'antd';
+import { Button, Input, Popconfirm, Table, Space } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import Timeline from '../Timeline';
-import { Channel, Subtitle } from '../../types';
+import { Channel, TrackItem } from '../../types';
 import { useAppContext } from '../../store';
 import { exportSRT, importSRT } from '../../utils';
 
@@ -14,17 +14,16 @@ interface ChannelPanelProps {
 }
 
 const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration, currentAudioFile }) => {
-  const { dispatch, state } = useAppContext();
+  const { dispatch } = useAppContext();
   const [isEditingName, setIsEditingName] = useState(false);
   const [name, setName] = useState(channel.name);
-  const [activeTab, setActiveTab] = useState('labels');
 
   const handleSaveName = () => {
     dispatch({ type: 'UPDATE_CHANNEL', channelId: channel.id, updates: { name } });
     setIsEditingName(false);
   };
 
-  const subtitleColumns = [
+  const itemColumns = [
     {
       title: '开始时间',
       dataIndex: 'startTime',
@@ -38,17 +37,17 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
       render: (time: number) => formatTime(time),
     },
     {
-      title: '字幕内容',
+      title: '内容',
       dataIndex: 'text',
       key: 'text',
-      render: (text: string, record: Subtitle) => (
+      render: (text: string, record: TrackItem) => (
         <Input
           value={text}
           onChange={(e) =>
             dispatch({
-              type: 'UPDATE_SUBTITLE',
+              type: 'UPDATE_ITEM',
               channelId: channel.id,
-              subtitleId: record.id,
+              itemId: record.id,
               updates: { text: e.target.value },
             })
           }
@@ -58,11 +57,11 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
     {
       title: '操作',
       key: 'action',
-      render: (_: any, record: Subtitle) => (
+      render: (_: any, record: TrackItem) => (
         <Popconfirm
-          title="确定删除此字幕？"
+          title="确定删除此标签？"
           onConfirm={() =>
-            dispatch({ type: 'DELETE_SUBTITLE', channelId: channel.id, subtitleId: record.id })
+            dispatch({ type: 'DELETE_ITEM', channelId: channel.id, itemId: record.id })
           }
           okText="确定"
           cancelText="取消"
@@ -80,7 +79,7 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
       const subtitles = importSRT(content);
       subtitles.forEach(sub => {
         dispatch({
-          type: 'ADD_SUBTITLE',
+          type: 'ADD_ITEM',
           channelId: channel.id,
           startTime: sub.startTime,
           endTime: sub.endTime,
@@ -93,7 +92,7 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
   };
 
   const handleExportSubtitle = () => {
-    const content = exportSRT(channel.subtitles);
+    const content = exportSRT(channel.items);
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -128,7 +127,7 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={handleSaveName}
-            onEnterPress={handleSaveName}
+            onPressEnter={handleSaveName}
             autoFocus
             style={{ width: 200 }}
           />
@@ -152,65 +151,61 @@ const ChannelPanel: React.FC<ChannelPanelProps> = ({ channel, channels, duration
         </Popconfirm>
       </div>
 
-      <Tabs activeKey={activeTab} onChange={setActiveTab} style={{ padding: '0 16px' }}>
-        <Tabs.TabPane tab="标签" key="labels">
-          <div style={{ padding: '8px 0 16px' }}>
-            <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
-              在下方拖动鼠标选择区域添加标签
-            </p>
-            <Timeline 
-              channel={channel} 
-              channels={channels} 
-              duration={duration} 
-              currentAudioFile={currentAudioFile}
-            />
-          </div>
-        </Tabs.TabPane>
+      <div style={{ padding: '0 16px' }}>
+        <div style={{ padding: '8px 0 16px' }}>
+          <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
+            在下方拖动鼠标选择区域添加标签
+          </p>
+          <Timeline 
+            channel={channel} 
+            channels={channels} 
+            duration={duration} 
+            currentAudioFile={currentAudioFile}
+          />
+        </div>
 
-        <Tabs.TabPane tab="字幕" key="subtitles">
-          <div style={{ padding: '8px 0 16px' }}>
-            <Space style={{ marginBottom: 16 }}>
-              <Button
-                icon={<PlusOutlined />}
-                onClick={() =>
-                  dispatch({
-                    type: 'ADD_SUBTITLE',
-                    channelId: channel.id,
-                    startTime: 0,
-                    endTime: 5,
-                    text: '新字幕',
-                  })
-                }
-              >
-                添加字幕
-              </Button>
-              <UploadOutlined
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.srt';
-                  input.onchange = (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0];
-                    if (file) handleImportSubtitle(file);
-                  };
-                  input.click();
-                }}
-                style={{ cursor: 'pointer', fontSize: 20 }}
-              />
-              <Button icon={<UploadOutlined />} onClick={handleExportSubtitle}>
-                导出字幕
-              </Button>
-            </Space>
-            <Table
-              dataSource={channel.subtitles.sort((a, b) => a.startTime - b.startTime)}
-              columns={subtitleColumns}
-              rowKey="id"
-              size="small"
-              pagination={false}
+        <div style={{ padding: '0 0 16px' }}>
+          <Space style={{ marginBottom: 16 }}>
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() =>
+                dispatch({
+                  type: 'ADD_ITEM',
+                  channelId: channel.id,
+                  startTime: 0,
+                  endTime: 5,
+                  text: '新标签',
+                })
+              }
+            >
+              添加标签
+            </Button>
+            <UploadOutlined
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.srt';
+                input.onchange = (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) handleImportSubtitle(file);
+                };
+                input.click();
+              }}
+              style={{ cursor: 'pointer', fontSize: 20 }}
             />
-          </div>
-        </Tabs.TabPane>
-      </Tabs>
+            <Button icon={<UploadOutlined />} onClick={handleExportSubtitle}>
+              导出字幕
+            </Button>
+          </Space>
+          <Table
+            dataSource={channel.items.sort((a, b) => a.startTime - b.startTime)}
+            columns={itemColumns}
+            rowKey="id"
+            size="small"
+            pagination={false}
+          />
+        </div>
+      </div>
     </div>
   );
 };
