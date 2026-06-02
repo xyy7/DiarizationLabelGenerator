@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Button, Slider, Space, Tooltip } from 'antd';
+import { Button, Slider, Space, Tooltip, message } from 'antd';
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -12,13 +12,16 @@ import { useAppContext } from '../../store';
 
 interface AudioPlayerProps {
   audioUrl: string | null;
+  onUrlInvalid?: () => void;
 }
 
-const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
+const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl, onUrlInvalid }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const { state, dispatch } = useAppContext();
   const [isReady, setIsReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const loadTimeoutRef = useRef<number | null>(null);
 
   // 键盘快捷键处理
   useEffect(() => {
@@ -92,8 +95,28 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
     });
 
     ws.on('ready', () => {
+      // 清除超时
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
       setIsReady(true);
+      setLoadError(false);
       dispatch({ type: 'SET_DURATION', duration: ws.getDuration() });
+    });
+
+    ws.on('error', (error) => {
+      console.error('WaveSurfer error:', error);
+      setLoadError(true);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
+      // 提示用户音频加载失败
+      message.error('音频加载失败，请尝试重新导入该音频文件');
+      if (onUrlInvalid) {
+        onUrlInvalid();
+      }
     });
 
     ws.on('audioprocess', () => {
@@ -110,11 +133,30 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
     return () => {
       ws.destroy();
       setIsReady(false);
+      setLoadError(false);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
     };
   }, []);
 
   useEffect(() => {
     if (audioUrl && wavesurferRef.current) {
+      setLoadError(false);
+      setIsReady(false);
+      dispatch({ type: 'SET_DURATION', duration: 0 });
+      
+      // 设置加载超时（10秒）
+      loadTimeoutRef.current = window.setTimeout(() => {
+        if (!isReady) {
+          setLoadError(true);
+          message.error('音频加载超时，请尝试重新导入该音频文件');
+          if (onUrlInvalid) {
+            onUrlInvalid();
+          }
+        }
+      }, 10000);
+      
       wavesurferRef.current.load(audioUrl);
     }
   }, [audioUrl]);
@@ -127,6 +169,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
   }, [state.playbackRate, state.volume, isReady]);
 
   const togglePlay = () => {
+    if (loadError) {
+      message.warning('音频加载失败，请尝试重新导入该音频文件');
+      return;
+    }
     if (wavesurferRef.current) {
       wavesurferRef.current.playPause();
     }
@@ -160,6 +206,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl }) => {
             size="large"
             icon={state.isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
             onClick={togglePlay}
+            disabled={loadError}
           >
             {state.isPlaying ? '暂停' : '播放'}
           </Button>
