@@ -218,7 +218,12 @@ const AppContent: React.FC = () => {
         <Content style={{ padding: 24, background: '#f0f2f5', overflow: 'auto' }}>
           {currentAudio && (
             <div style={{ marginBottom: 24 }}>
-              <AudioPlayer audioUrl={currentAudio.url} />
+              <AudioPlayer 
+                audioUrl={currentAudio.url}
+                onUrlInvalid={() => {
+                  message.warning(`音频文件 "${currentAudio.name}" 无法加载，请点击左侧音频列表中的文件重新导入`);
+                }}
+              />
             </div>
           )}
 
