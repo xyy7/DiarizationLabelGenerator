@@ -126,7 +126,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioUrl, onUrlInvalid }) => 
     ws.on('play', () => dispatch({ type: 'SET_PLAYING', isPlaying: true }));
     ws.on('pause', () => dispatch({ type: 'SET_PLAYING', isPlaying: false }));
     ws.on('finish', () => dispatch({ type: 'SET_PLAYING', isPlaying: false }));
-    ws.on('seek', (time) => dispatch({ type: 'SET_CURRENT_TIME', time }));
+    // @ts-ignore - wavesurfer 事件类型问题
+    ws.on('seek', (time) => {
+      if (typeof time === 'number') {
+        dispatch({ type: 'SET_CURRENT_TIME', time });
+      }
+    });
 
     wavesurferRef.current = ws;
 

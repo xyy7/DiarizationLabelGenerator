@@ -182,19 +182,19 @@ const appReducer = (state: AppState, action: Action): AppState => {
       return { ...state, volume: action.volume };
 
     case 'LOAD_PROJECT':
-      // 数据迁移：将旧的 labels 和 subtitles 合并到 items
+      // 数据迁移：兼容旧数据结构
       const migratedProject = {
         ...action.project,
-        channels: action.project.channels.map(ch => ({
-          ...ch,
-          items: ch.items || [
-            ...(ch.labels || []),
-            ...(ch.subtitles || [])
-          ],
-          // 清理旧属性
-          labels: undefined,
-          subtitles: undefined
-        }))
+        channels: action.project.channels.map(ch => {
+          // @ts-ignore - 兼容旧数据
+          const oldLabels = ch.labels || [];
+          // @ts-ignore - 兼容旧数据
+          const oldSubtitles = ch.subtitles || [];
+          return {
+            ...ch,
+            items: ch.items || [...oldLabels, ...oldSubtitles]
+          };
+        })
       };
       return { ...state, project: migratedProject };
 
