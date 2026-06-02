@@ -182,7 +182,21 @@ const appReducer = (state: AppState, action: Action): AppState => {
       return { ...state, volume: action.volume };
 
     case 'LOAD_PROJECT':
-      return { ...state, project: action.project };
+      // 数据迁移：将旧的 labels 和 subtitles 合并到 items
+      const migratedProject = {
+        ...action.project,
+        channels: action.project.channels.map(ch => ({
+          ...ch,
+          items: ch.items || [
+            ...(ch.labels || []),
+            ...(ch.subtitles || [])
+          ],
+          // 清理旧属性
+          labels: undefined,
+          subtitles: undefined
+        }))
+      };
+      return { ...state, project: migratedProject };
 
     case 'CREATE_CLIP_PROJECT':
       return { ...state, project: action.project };
