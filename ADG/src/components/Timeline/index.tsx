@@ -11,9 +11,10 @@ interface TimelineProps {
   duration: number;
   currentAudioFile?: any;
   onPlaySegment?: (start: number, end: number) => void;
+  onItemClick?: (itemId: string) => void;
 }
 
-const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, currentAudioFile, onPlaySegment }) => {
+const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, currentAudioFile, onPlaySegment, onItemClick }) => {
   const { dispatch, state } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -508,6 +509,11 @@ const Timeline: React.FC<TimelineProps> = ({ channel, channels, duration, curren
               }}
               onMouseDown={(e) => startDrag(e, item.id, 'move', item)}
               onDoubleClick={(e) => handleDoubleClick(e, item)}
+              onClick={(e) => {
+                if (onItemClick && !isDragging) {
+                  onItemClick(item.id);
+                }
+              }}
             >
               <div
                 style={{
