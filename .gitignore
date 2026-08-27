@@ -1,0 +1,31 @@
+# DiariZen 上游仓库：由 diarizen-config/setup.ps1 自动 clone，不入库
+DiariZen/
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+
+# 模型权重（约 291 MB，由 download_models.py 下载）
+models/
+
+# 推理输出
+*.rttm
+
+# 环境
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 编辑器
+.vscode/
+.idea/
+.trae/
+.DS_Store
+
+# Claude Code 本地设置（机器相关，不入库）
+.claude/settings.local.json
