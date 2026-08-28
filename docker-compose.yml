@@ -1,0 +1,113 @@
+# Single-machine deployment for the diarization annotation server.
+#
+#   docker compose up -d db api          # annotate + export, no inference
+#   docker compose run --rm seed-models  # once, to fetch the weights (~292 MB)
+#   docker compose up -d worker          # start consuming diarization jobs
+#
+# Build context is the repository root so the worker image can copy DiariZen/.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: adg
+      POSTGRES_PASSWORD: adg
+      POSTGRES_DB: adg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Backups land on the host: the annotations here represent tens of hours
+      # of human work that cannot be reproduced. See scripts/backup.sh.
+      - ./backups:/backups
+      # Creates adg_test on first init, so the suite's TRUNCATEs can never
+      # reach the database holding real annotations.
+      - ./server/docker/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adg -d adg"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: server/docker/Dockerfile
+      target: api
+    environment:
+      DATABASE_URL: postgresql+psycopg://adg:adg@db:5432/adg
+      DATA_DIR: /data
+    volumes:
+      - appdata:/data
+      # Built frontend, served as static files by the API.
+      - ./ADG/dist:/srv/static:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: server/docker/Dockerfile
+      target: worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://adg:adg@db:5432/adg
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      # DiariZen runs at ~1x realtime; the library never sets this itself.
+      TORCH_NUM_THREADS: 10
+    volumes:
+      - appdata:/data
+      - models:/models:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    # A worker killed mid-job leaves its row 'running' with a stale heartbeat;
+    # on restart the claim query picks it back up. Nothing is stranded.
+    restart: unless-stopped
+
+  # One-shot: docker compose run --rm seed-models
+  # Downloads the CC BY-NC 4.0 weights (~292 MB) into the models volume.
+  seed-models:
+    build:
+      context: .
+      dockerfile: server/docker/Dockerfile
+      target: worker
+    environment:
+      MODELS_DIR: /models
+      # huggingface.co is not directly reachable from this network. Inside a
+      # container the host's proxy is host.docker.internal, never 127.0.0.1:
+      #   HTTPS_PROXY=http://host.docker.internal:7890 docker compose run --rm seed-models
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - models:/models
+    command: ["python", "/srv/scripts/download_models.py", "--dest", "/models"]
+    profiles: ["setup"]
+    restart: "no"
+
+  # docker compose --profile test run --rm test
+  test:
+    build:
+      context: .
+      dockerfile: server/docker/Dockerfile
+      target: test
+    environment:
+      # A DIFFERENT database: the suite truncates between cases.
+      DATABASE_URL: postgresql+psycopg://adg:adg@db:5432/adg_test
+      # Ephemeral, inside the container: test uploads never touch appdata.
+      DATA_DIR: /tmp/adg-test-data
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["test"]
+    restart: "no"
+
+volumes:
+  pgdata:
+  appdata:
+  models:

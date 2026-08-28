@@ -1,0 +1,34 @@
+# The build context is the repository root (the worker stage needs DiariZen/),
+# so everything large and irrelevant has to be excluded explicitly or the
+# daemon receives gigabytes before the first instruction runs.
+
+**/.git
+**/.gitignore
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+**/venv
+
+# Frontend build output is bind-mounted at runtime, not copied in.
+ADG/dist
+
+# CC BY-NC 4.0 weights: fetched into a volume by seed-models, never baked into
+# an image. ~292 MB, and keeping them out is what keeps the image shareable.
+diarizen-config/models
+DiariZen/models
+
+# Upstream history and its own build artifacts.
+DiariZen/.git
+DiariZen/pyannote-audio/.git
+DiariZen/**/*.ckpt
+DiariZen/**/*.bin
+DiariZen/**/*.pt
+
+# Local state
+backups
+data
+docs
+*.md
+!README.md
