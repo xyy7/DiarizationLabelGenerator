@@ -21,6 +21,7 @@ import ShortcutHelp, { ShortcutBar } from '../components/ShortcutHelp';
 import { api, ApiError } from '../api/client';
 import { canRedo, canUndo, initialState, reducer } from '../annotation/reducer';
 import { find, nextSegment, prevSegment } from '../annotation/operations';
+import { PALETTE } from '../palette';
 import type { Recording } from '../types';
 
 const AUTOSAVE_MS = 2000;
@@ -163,6 +164,18 @@ export default function Annotator() {
     playSegment(target.id);
   }, [playSegment]);
 
+  // Add a speaker. With a segment selected it takes that segment with it --
+  // this is the repair for VBx putting two people under one label. Without
+  // one it is just a new empty lane, for a person DiariZen never placed.
+  const newSpeaker = useCallback(() => {
+    const s = stateRef.current;
+    if (s.selectedId) {
+      dispatch({ type: 'SPLIT_SPEAKER', segmentIds: [s.selectedId], palette: PALETTE });
+    } else {
+      dispatch({ type: 'CREATE_SPEAKER', palette: PALETTE });
+    }
+  }, []);
+
   // --- keyboard -------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -254,6 +267,7 @@ export default function Annotator() {
       if (lower === 'k') { e.preventDefault(); step(-1); return; }
       if (lower === 's' && sel) { dispatch({ type: 'SPLIT', id: sel, time: currentTime }); return; }
       if (lower === 'm' && sel) { dispatch({ type: 'MERGE_NEXT', id: sel }); return; }
+      if (lower === 'n') { e.preventDefault(); newSpeaker(); return; }
 
       if (/^[1-9]$/.test(e.key) && sel) {
         const speaker = s.speakers[Number(e.key) - 1];
@@ -263,7 +277,7 @@ export default function Annotator() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentTime, rate, save, step, playSegment]);
+  }, [currentTime, rate, save, step, playSegment, newSpeaker]);
 
   // --- speaker actions ------------------------------------------------------
   const [mergeFrom, setMergeFrom] = useState<string | null>(null);
@@ -344,7 +358,14 @@ export default function Annotator() {
 
       <Space align="start" style={{ marginTop: 16 }} size={32}>
         <div>
-          <h4>说话人</h4>
+          <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            说话人
+            <Tooltip title="选中片段时新建说话人并把这片段拆给他（快捷键 N）；未选中则只新建一个空说话人">
+              <Button size="small" type="primary" ghost onClick={newSpeaker}>
+                ＋ 新建说话人
+              </Button>
+            </Tooltip>
+          </h4>
           {state.speakers.map((sp, i) => (
             <div key={sp.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ width: 14, height: 14, background: sp.color, borderRadius: 3 }} />

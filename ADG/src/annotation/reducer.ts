@@ -51,6 +51,7 @@ export type Action =
   | { type: 'CREATE'; label: string; start: number; end: number }
   | { type: 'MERGE_SPEAKERS'; from: string; into: string }
   | { type: 'SPLIT_SPEAKER'; segmentIds: string[]; palette: readonly string[] }
+  | { type: 'CREATE_SPEAKER'; palette: readonly string[] }
   | { type: 'RENAME_SPEAKER'; label: string; name: string }
   | { type: 'SET_TEXT'; id: string; text: string; coalesce?: boolean }
   | { type: 'UNDO' }
@@ -192,10 +193,21 @@ export function reducer(state: EditState, action: Action): EditState {
     }
 
     case 'SPLIT_SPEAKER': {
-      const { speakers, segments } = ops.splitSpeaker(
+      const { speakers, segments, label } = ops.splitSpeaker(
         state.speakers, state.segments, action.segmentIds, action.palette,
       );
-      return commit(state, { speakers, segments });
+      // The number key that will now move segments to this speaker; the
+      // notice is how a keyboard user learns it without opening the panel.
+      return commit(state, { speakers, segments }, {
+        notice: `已新建说话人 ${label}（数字键 ${state.speakers.length + 1}）`,
+      });
+    }
+
+    case 'CREATE_SPEAKER': {
+      const { speakers, speaker } = ops.createSpeaker(state.speakers, action.palette);
+      return commit(state, { speakers }, {
+        notice: `已新建说话人 ${speaker.label}（数字键 ${state.speakers.length + 1}）`,
+      });
     }
 
     case 'RENAME_SPEAKER': {

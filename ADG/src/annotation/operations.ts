@@ -248,13 +248,17 @@ export function mergeSpeakers(
   };
 }
 
-/** Move chosen segments to a brand-new speaker (the inverse of a bad merge). */
-export function splitSpeaker(
+/**
+ * The next speaker a correction gets assigned to: first free integer label
+ * (labels come from DiariZen and must stay stable for re-run comparison, so a
+ * new one has to avoid every label already in use, even a sparse set after a
+ * merge), a display name mirroring the server's convention, and the palette
+ * colour that would have gone to this slot.
+ */
+function freshSpeaker(
   speakers: Speaker[],
-  segments: Segment[],
-  segmentIds: string[],
   palette: readonly string[],
-): { speakers: Speaker[]; segments: Segment[]; label: string } {
+): Speaker {
   const used = new Set(speakers.map((s) => s.label));
   let n = speakers.length;
   let label = String(n);
@@ -263,18 +267,41 @@ export function splitSpeaker(
     label = String(n);
   }
 
-  const speaker: Speaker = {
+  return {
     label,
     name: `说话人 ${label}`,
     color: palette[speakers.length % palette.length],
     sort_order: speakers.length,
   };
+}
+
+/**
+ * Add an empty speaker: a lane with no segments, ready for drawing or
+ * reassignment by number key. This is how a person DiariZen never placed
+ * anywhere gets introduced.
+ */
+export function createSpeaker(
+  speakers: Speaker[],
+  palette: readonly string[],
+): { speakers: Speaker[]; speaker: Speaker } {
+  const speaker = freshSpeaker(speakers, palette);
+  return { speakers: [...speakers, speaker], speaker };
+}
+
+/** Move chosen segments to a brand-new speaker (the inverse of a bad merge). */
+export function splitSpeaker(
+  speakers: Speaker[],
+  segments: Segment[],
+  segmentIds: string[],
+  palette: readonly string[],
+): { speakers: Speaker[]; segments: Segment[]; label: string } {
+  const speaker = freshSpeaker(speakers, palette);
   const ids = new Set(segmentIds);
 
   return {
     speakers: [...speakers, speaker],
-    segments: segments.map((s) => (s.id && ids.has(s.id) ? { ...s, speaker_label: label } : s)),
-    label,
+    segments: segments.map((s) => (s.id && ids.has(s.id) ? { ...s, speaker_label: speaker.label } : s)),
+    label: speaker.label,
   };
 }
 

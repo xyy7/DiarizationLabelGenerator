@@ -38,6 +38,7 @@ export const GROUPS: { title: string; items: Shortcut[] }[] = [
     title: '修改',
     items: [
       { keys: ['1', '…', '9'], what: '把选中片段改判给第 N 位说话人', needsSelection: true },
+      { keys: ['N'], what: '新建说话人（选中时把这片段拆给他）' },
       { keys: ['S'], what: '在播放头处拆分', needsSelection: true },
       { keys: ['M'], what: '与同一说话人的下一段合并', needsSelection: true },
       { keys: ['Del'], what: '删除片段', needsSelection: true },
@@ -99,6 +100,7 @@ export function ShortcutBar({ onOpen }: { onOpen: () => void }) {
       <span><Keys keys={['J']} /><Keys keys={['K']} /> 走查</span>
       <span><Keys keys={['空格']} /> 播放</span>
       <span><Keys keys={['1', '…', '9']} /> 改判</span>
+      <span><Keys keys={['N']} /> 新说话人</span>
       <span><Keys keys={['S']} /> 拆分</span>
       <span><Keys keys={['M']} /> 合并</span>
       <span><Keys keys={[',']} /><Keys keys={['.']} /> 微调</span>

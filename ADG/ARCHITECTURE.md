@@ -1,351 +1,119 @@
-# 音频标签生成工具 - 项目架构文档
+# ADG 前端架构
 
 ## 目录
 
 - [项目概述](#项目概述)
 - [技术栈](#技术栈)
 - [目录结构](#目录结构)
-- [核心模块](#核心模块)
-- [数据结构](#数据结构)
+- [数据模型](#数据模型)
 - [状态管理](#状态管理)
-- [组件设计](#组件设计)
+- [关键组件](#关键组件)
+- [快捷键原则](#快捷键原则)
 
 ---
 
 ## 项目概述
 
-音频标签生成工具是一个基于 React 的前端应用程序，主要用于：
+ADG 是纠错式标注系统的**浏览器视图**。系统的对账本（system of record）在服务端
+（仓库根目录 `../server/`，FastAPI + Postgres）：音频、标注、任务状态都归服务端管，
+浏览器不持久化任何业务数据，刷新页面即从服务端重新装载。
 
-1. 音频播放控制
-2. 标签标记（说话人日志标记）
-3. 字幕编辑
-4. 多通道标签管理
-5. 标签和字幕的导入导出
+三个设计取向：
 
-应用架构采用 React 18 + TypeScript 为核心，使用 Vite 作为构建工具，保证了高效的开发体验和良好的性能。
-
----
+1. **纠错优先**。DiariZen 先跑出预标注，标注员的主要动作是「改」而不是「画」，
+   所以所有编辑操作都是纯函数（`annotation/operations.ts`），并配撤销栈。
+2. **一条时间轴**。所有说话人共用同一根标尺与滚动位置，跨说话人的重叠一眼可见；
+   旧版本每个说话人独立时间轴、独立缩放，是对齐看重叠不可行。
+3. **键盘为纲**。标注是键盘活——走查（`J`/`K`）、改判（`1`–`9`）、拆分（`S`）、
+   合并（`M`）、微调（`,`/`.`）、新建说话人（`N`）都绑定在手边。
 
 ## 技术栈
 
-| 技术 | 版本/用途 |
-|-----|---------|
-| 前端框架 | React 18 + TypeScript |
-| 构建工具 | Vite |
-| UI 组件库 | Ant Design 5.x |
-| 音频处理 | wavesurfer.js |
-| 唯一 ID | uuid |
-| 浏览器兼容 | 现代浏览器 (Chrome 90+, Firefox 88+, Edge 90+) |
-
-### 依赖关系
-
-主要依赖包在 `package.json` 中定义：
-
-- `react`, `react-dom`: 核心 UI 渲染
-- `wavesurfer.js`: 音频可视化和播放控制
-- `antd`: UI 组件库
-- `uuid`: 生成唯一标识符
-
----
+| 技术 | 用途 |
+|---|---|
+| React 18 + TypeScript | 视图 |
+| Vite | 构建；dev 模式代理 `/api` → `localhost:8000` |
+| Ant Design 5 | 组件库（工具栏、表格、弹窗） |
+| wavesurfer.js 7 | 波形渲染与播放（渲染进 shadow DOM） |
+| react-router-dom | `/`（列表）、`/rec/:id`（标注页） |
+| vitest | 单元测试：编辑纯逻辑（operations/reducer） |
 
 ## 目录结构
 
 ```
 ADG/
-├── public/
-│   └── index.html
 ├── src/
-│   ├── components/          # 组件目录
-│   │   ├── AudioPlayer/     # 音频播放器组件
-│   │   │   └── index.tsx
-│   │   ├── Timeline/        # 时间轴/标签组件
-│   │   │   └── index.tsx
-│   │   ├── ChannelPanel/    # 通道面板组件
-│   │   │   └── index.tsx
-│   ├── store/               # 状态管理
-│   │   └── index.tsx
-│   ├── types/               # TypeScript 类型定义
-│   │   └── index.ts
-│   ├── utils/               # 工具函数
-│   │   ├── index.ts
-│   │   ├── label.ts         # 标签处理工具
-│   │   └── subtitle.ts      # 字幕处理工具
-│   ├── App.tsx              # 主应用组件
-│   └── main.tsx             # 应用入口
-├── test_data/               # 测试数据
-├── .gitignore
-├── package.json
-├── tsconfig.json
+│   ├── main.tsx               # 入口 + 路由
+│   ├── types.ts               # 与服务端 API 对齐的类型（无本地数据模型）
+│   ├── palette.ts             # 说话人配色，与服务端保持一致的常量
+│   ├── api/client.ts          # REST 客户端：上传、认领、导入 RTTM、保存、导出
+│   ├── pages/
+│   │   ├── Workbench.tsx      # 列表页：上传、认领、导入 RTTM、删除、导出
+│   │   └── Annotator.tsx      # 标注页：装载/保存、键盘、说话人面板、合并弹窗
+│   ├── components/
+│   │   ├── Timeline.tsx       # 共用时间轴：标尺 + 波形 + 每说话人一条轨道
+│   │   ├── Waveform.tsx       # wavesurfer 封装
+│   │   └── ShortcutHelp.tsx   # 快捷键面板（`?`）与常驻快捷条
+│   └── annotation/
+│       ├── operations.ts      # 纯编辑函数（无 React 依赖）
+│       ├── operations.test.ts
+│       ├── reducer.ts         # 编辑缓冲 + 撤销/重做（快照式，上限 200 步）
+│       └── reducer.test.ts
+├── scripts/                   # playwright-core 浏览器验证脚本（见 README）
+├── index.html
 ├── vite.config.ts
-└── README.md
+└── package.json
 ```
 
----
+## 数据模型
 
-## 核心模块
+不存在前端的 `Label`/`Subtitle`/`Project`/`Channel` 等本地结构——那套模型随
+客户端–服务端重构删除。`src/types.ts` 只是服务端 API 形状的镜像：
 
-### 1. 音频处理模块
-
-位置：`src/components/AudioPlayer/index.tsx`
-
-主要功能：
-- 音频加载和播放控制
-- 波形可视化（使用 wavesurfer.js）
-- 倍速播放（0.5x - 2.0x）
-- 音量控制
-- 进度控制
-- 键盘快捷键支持
-- 播放速度预设按钮
-
-### 2. 标签管理模块
-
-位置：`src/components/Timeline/index.tsx` 和 `src/utils/label.ts`
-
-主要功能：
-- 标签的创建、编辑、删除
-- 标签拖动调整时间
-- 标签文本编辑
-- 标签设置弹窗（精确时间编辑）
-- 标签导入导出（JSON）
-
-### 3. 字幕管理模块
-
-位置：`src/components/ChannelPanel/index.tsx` 和 `src/utils/subtitle.ts`
-
-主要功能：
-- 字幕的创建、编辑、删除
-- SRT 格式导入导出
-- 字幕时间轴管理
-
-### 4. 通道管理模块
-
-位置：`src/components/ChannelPanel/index.tsx`
-
-主要功能：
-- 多通道管理（每个通道一个说话人）
-- 通道名称编辑
-- 通道标签和字幕的关联
-
----
-
-## 数据结构
-
-### Subtitle 类型
 ```typescript
-interface Subtitle {
-  id: string;
-  startTime: number; // 秒
-  endTime: number;   // 秒
-  text: string;
-}
+interface Speaker { label: string; name: string; color: string; sort_order: number }
+interface Segment  { id: string; speaker_label: string; start_sec: number; end_sec: number; text: string }
+interface Recording { id; session_name; duration_sec; status; claimed_by; annotation_version; ... }
 ```
 
-### Label 类型
-```typescript
-interface Label {
-  id: string;
-  channelId: string;
-  startTime: number; // 秒
-  endTime: number;   // 秒
-  text: string;
-  color?: string;
-}
-```
+要点：
 
-### Channel 类型
-```typescript
-interface Channel {
-  id: string;
-  name: string;
-  color: string;
-  labels: Label[];
-  subtitles: Subtitle[];
-}
-```
-
-### AudioFile 类型
-```typescript
-interface AudioFile {
-  id: string;
-  name: string;
-  url: string;
-  file?: File;
-  duration?: number;
-}
-```
-
-### Project 类型
-```typescript
-interface Project {
-  id: string;
-  name: string;
-  audioFiles: AudioFile[];
-  currentAudioId: string | null;
-  channels: Channel[];
-  createdAt: number;
-  updatedAt: number;
-}
-```
-
-### AppState 类型
-```typescript
-interface AppState {
-  project: Project | null;
-  isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  playbackRate: number;
-  volume: number;
-}
-```
-
----
+- **`label` 是稳定主键**，从不改动。DiariZen 发出的裸整数（`"0"`、`"3"`）原样保留，
+  以便模型重跑仍然可比；重命名只碰 `name`。
+- **`version` 是乐观锁**。保存时带上版本号，服务端发现过期则拒绝
+  （`version_conflict`），标注页弹窗提示「有人先保存了」。
+- `text` 字段保留给第二阶段（字幕），当前只跟随片段，不进入 RTTM 第 11 字段
+  （标准 RTTM 为 10 字段，文本在 `ortho`）。
 
 ## 状态管理
 
-项目采用 React 原生 Context API + useReducer 实现状态管理，避免引入额外的状态管理库（如 Redux），保持项目简洁。
+- **不引入状态库**。编辑缓冲用一个 `useReducer`（`annotation/reducer.ts`），
+  装载（`LOAD`）时从服务端拿快照，之后所有编辑动作以纯函数应用，产出一个新缓冲。
+- **撤销/重做是快照式**：`past`/`future` 栈里存整份 `{speakers, segments, selectedId}`。
+  一两个小对象数组的拷贝，字节数远比逆操作逻辑的复杂度便宜。
+- **合并（coalesce）**：连续同类微调（拖边界、`/` 微调、重命名）只占一个撤销条目，
+  不把上一步真操作埋进 50 个 nudge 里。
+- **自动保存**：标注页监听 `dirty`，2 秒防抖；页面卸载前用 `beforeunload` 拦截。
+- **`tempId()`**：新片段/新说话人先给客户端临时 id，保存成功由服务端赋予正式 id
+  并回传 `version`（`SAVED`）。
 
-位置：`src/store/index.tsx`
+## 关键组件
 
-### 状态逻辑
+| 组件 | 职责 |
+|---|---|
+| `Workbench` | 状态列表（队列/认领人/版本），上传（流式哈希去重），导入 RTTM（文件名不符时要求确认），导出 zip |
+| `Annotator` | 装载（录音 + 标注 + 波形峰值），键盘分发，保存/冲突处理，说话人面板（改名、`N` 新建、合并到…），缩放 |
+| `Timeline` | 一根标尺 + 每说话人一条轨道 + 跨轨道播放头。拖轨道空白新建片段，拖片段移动，拖边缘改边界。宽度 = `duration × pxPerSec`，同一滚动容器 |
+| `Waveform` | wavesurfer 7 封装；峰值由服务端计算（100 点/秒），避免前端下载整段波形 |
+| `ShortcutHelp` | `?` 打开的完整快捷键面板 + 常驻一行快捷条；`Tab` 特意不绑（留给键盘焦点） |
 
-主要管理以下状态：
-1. Project 数据（项目信息、音频文件、标签、字幕等）
-2. 播放控制状态（播放/暂停、当前时间、音量、倍速等）
+布局上波形与四条轨道的对齐经过脚本实测（`interact.mjs` 读取 DOM 矩形断言
+`dx=0 dw=0`），这是防「各说话人时间轴错位」回退的手段。
 
-### Action 类型
+## 快捷键原则
 
-- `CREATE_PROJECT`: 创建新项目
-- `ADD_AUDIO_FILES`: 添加音频文件
-- `SET_CURRENT_AUDIO`: 设置当前播放的音频
-- `ADD_CHANNEL`: 添加通道
-- `UPDATE_CHANNEL`: 更新通道
-- `DELETE_CHANNEL`: 删除通道
-- `ADD_LABEL`: 添加标签
-- `UPDATE_LABEL`: 更新标签
-- `DELETE_LABEL`: 删除标签
-- `ADD_SUBTITLE`: 添加字幕
-- `UPDATE_SUBTITLE`: 更新字幕
-- `DELETE_SUBTITLE`: 删除字幕
-- `SET_PLAYING`: 设置播放状态
-- `SET_CURRENT_TIME`: 设置当前时间
-- `SET_DURATION`: 设置总时长
-- `SET_PLAYBACK_RATE`: 设置播放速度
-- `SET_VOLUME`: 设置音量
-- `LOAD_PROJECT`: 加载项目数据
-
-### 数据持久化
-
-使用 localStorage 实现自动保存功能，项目状态变化时会自动保存，页面加载时会尝试恢复上次保存的数据。
-
----
-
-## 组件设计
-
-### 1. App 组件
-
-主要职责：
-- 应用根组件
-- 项目创建/加载逻辑
-- 主 UI 布局（Header, Sider, Content）
-- 音频文件导入导出
-- 标签导入导出
-
-### 2. AudioPlayer 组件
-
-主要职责：
-- 音频波形可视化
-- 播放控制 UI
-- 键盘快捷键处理
-- 播放状态同步到 store
-
-Props：
-- `audioUrl`: 音频文件 URL
-
-### 3. Timeline 组件
-
-主要职责：
-- 时间轴渲染
-- 标签显示和交互
-- 标签编辑 UI
-- 标签设置弹窗
-
-Props：
-- `channel`: 通道数据
-- `duration`: 音频总时长
-
-### 4. ChannelPanel 组件
-
-主要职责：
-- 通道信息展示
-- 标签和字幕标签页切换
-- 字幕表格编辑
-- 字幕导入导出
-
-Props：
-- `channel`: 通道数据
-- `duration`: 音频总时长
-
----
-
-## 工具函数
-
-### 标签工具函数
-
-位置：`src/utils/label.ts`
-
-主要函数：
-- `createLabel()`: 创建新标签
-- `updateLabel()`: 更新标签
-- `deleteLabel()`: 删除标签
-- `exportLabels()`: 导出标签为 JSON
-- `importLabels()`: 从 JSON 导入标签
-- `getRandomColor()`: 生成随机通道颜色
-
-### 字幕工具函数
-
-位置：`src/utils/subtitle.ts`
-
-主要函数：
-- `createSubtitle()`: 创建新字幕
-- `formatTime()`: 格式化时间为 SRT 格式
-- `parseTime()`: 解析 SRT 格式时间
-- `exportSRT()`: 导出字幕为 SRT
-- `importSRT()`: 从 SRT 导入字幕
-
----
-
-## 工作原理
-
-### 音频播放流程
-
-1. 用户导入音频文件
-2. 文件 URL 传递给 AudioPlayer
-3. wavesurfer.js 加载音频并渲染波形
-4. 用户操作播放，状态同步到 store
-5. 其他组件响应播放状态变化
-
-### 标签标记流程
-
-1. 用户在 Timeline 上拖动创建标签
-2. 标签添加到对应 channel
-3. 状态更新到 store，自动保存
-4. 标签可拖动、编辑或删除
-
----
-
-## 浏览器兼容性
-
-- 使用 File API: 现代浏览器
-- 使用 Canvas API: 波形渲染
-- 使用 LocalStorage: 数据持久化
-- 使用 CSS Grid/Flexbox: 布局
-
----
-
-## 性能优化建议
-
-1. 对于大文件音频：考虑流式加载
-2. 对于大量标签：考虑虚拟滚动
-3. 对于频繁更新：使用 React.memo 优化重渲染
-4. 本地存储限制：考虑 IndexedDB 或文件系统存储（Chrome 扩展或 Electron）
+- `1`–`9` = 改判给第 N 位说话人（旧版是播放倍速；倍速让位给 `-`/`=`）。
+- `Tab` 不绑任何功能——它是键盘焦点唯一的移动方式，绑走了页面就没有控件可达。
+- 数字键与改判的对应关系（`speakers[Number(e.key) - 1]`）变化时，`1`–`9` 的
+  帮助文案、`1` 到 `9` 之外说话人的到达方式（`N` + 数字键）要同步检查。
+- 快捷键清单的唯一事实来源是 `ShortcutHelp.tsx` 的 `GROUPS`；新快捷键必须先改它。

@@ -179,6 +179,25 @@ const w2 = await widthOfSelected();
 ok(Math.abs(w2 - w0) < 2, 'one undo takes back the whole nudge run',
   `back to ${Math.round(w2)}px`);
 
+// New speaker: N creates a fresh lane and takes the selected segment along.
+// This is the repair for VBx merging two people under one label.
+const lanesBefore = (await layout()).lanes.length;
+const segsBeforeN = await segTotal();
+await page.keyboard.press('n');
+await page.waitForTimeout(500);
+const afterN = await layout();
+ok(afterN.lanes.length === lanesBefore + 1, 'N creates a new speaker lane',
+  `${lanesBefore} -> ${afterN.lanes.length}`);
+const nLane = afterN.lanes[afterN.lanes.length - 1];
+ok(nLane.segments.length === 1 && nLane.segments[0].selected,
+  'the selected segment moved into it and stays selected');
+ok(await segTotal() === segsBeforeN, 'N moves the segment, adds or removes none',
+  `${segsBeforeN} -> ${await segTotal()}`);
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(500);
+ok((await layout()).lanes.length === lanesBefore, 'one undo takes back the whole split',
+  `${lanesBefore} lanes`);
+
 // Help panel
 await page.keyboard.press('?');
 await page.waitForTimeout(600);

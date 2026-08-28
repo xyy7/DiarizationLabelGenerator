@@ -213,4 +213,54 @@ describe('speaker operations', () => {
     expect(state.speakers).toHaveLength(2);
     expect(state.segments.find((s) => s.id === 'b')?.speaker_label).toBe('1');
   });
+
+  it('creates an empty speaker for someone DiariZen never placed', () => {
+    const state = run(loaded(), { type: 'CREATE_SPEAKER', palette: ['#a', '#b', '#c'] });
+
+    expect(state.speakers).toHaveLength(3);
+    expect(state.speakers[2]).toMatchObject({
+      label: '2', name: '说话人 2', color: '#c', sort_order: 2,
+    });
+    expect(state.dirty).toBe(true);
+    expect(state.notice).toContain('（数字键 3）');
+  });
+
+  it('skips sparse labels left behind by a merge', () => {
+    // labels 0,1,2 with "1" merged into "0" leaves a sparse set {0,2}; a new
+    // speaker must not reuse "2" because DiariZen re-runs are compared
+    // against these labels.
+    const state = run(
+      { ...loaded(), speakers: [...SPEAKERS, { label: '2', name: 'C', color: '#c', sort_order: 2 }] },
+      { type: 'MERGE_SPEAKERS', from: '1', into: '0' },
+      { type: 'CREATE_SPEAKER', palette: ['#a', '#b', '#c'] },
+    );
+
+    expect(state.speakers.map((s) => s.label)).toEqual(['0', '2', '3']);
+  });
+
+  it('splits the selected segment into a brand-new speaker', () => {
+    // The inverse of a bad merge: VBx put two people under one label, the
+    // annotator picks the clip of the second one and presses N.
+    const state = run(
+      loaded(),
+      { type: 'SELECT', id: 'b' },
+      { type: 'SPLIT_SPEAKER', segmentIds: ['b'], palette: ['#a', '#b', '#c'] },
+    );
+
+    expect(state.speakers).toHaveLength(3);
+    expect(state.segments.find((s) => s.id === 'b')?.speaker_label).toBe('2');
+    expect(state.segments.find((s) => s.id === 'a')?.speaker_label).toBe('0');
+    expect(state.notice).toContain('数字键 3');
+  });
+
+  it('undoes a split speaker', () => {
+    const state = run(
+      loaded(),
+      { type: 'SPLIT_SPEAKER', segmentIds: ['b'], palette: ['#a', '#b', '#c'] },
+      { type: 'UNDO' },
+    );
+
+    expect(state.speakers).toHaveLength(2);
+    expect(state.segments.find((s) => s.id === 'b')?.speaker_label).toBe('1');
+  });
 });
