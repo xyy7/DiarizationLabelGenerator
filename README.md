@@ -1,54 +1,74 @@
 # DiarizationLabelGenerator
 
-说话人分离（speaker diarization）标注工具。由两部分组成：
+说话人分离（speaker diarization）标注工具，**客户端–服务端的纠错式标注系统**。
+服务端跑 DiariZen 出预标注、并持有音频 / 标注 / 任务状态；浏览器只是视图。
+
+工作流程：上传音频 → DiariZen 预标注（或导入外部 RTTM）→ 标注员逐段纠错 →
+标记完成 → 导出**标准 10 字段 RTTM**（可直接喂 `md-eval.pl` / `dscore` 算 DER）。
+
+```bash
+docker compose up -d db api     # 起服务；前端由 api 直接托管
+# 浏览器打开 http://localhost:8000
+```
+
+## 目录
 
 | 目录 | 内容 |
 |---|---|
-| `ADG/` | 前端标注应用（Vite + TypeScript），手动标注说话人通道与时间段 |
-| `diarizen-config/` | [DiariZen](https://github.com/BUTSpeechFIT/DiariZen) 的纯 CPU 环境配置与推理脚本 |
+| `server/` | FastAPI + Postgres：音频归档、预标注任务队列（worker）、标注存取、RTTM 导出 |
+| `ADG/` | 前端标注应用（Vite + React + TS）：列表认领 + 快捷键为主的纠错交互 |
+| `docker-compose.yml` | db / api / worker / seed-models / test |
+| `docs/` | 意图书（`intent/adg-refactor.md`）、交接文档（`HANDOFF.md`） |
+| `diarizen-config/` | DiariZen 纯 CPU 环境配置与推理脚本，以及权重下载脚本（worker 镜像用） |
 
-目前两部分**尚未集成**：ADG 是纯手动标注，DiariZen 可独立跑出 RTTM。
-把 DiariZen 的输出接进 ADG 作为预标注，是后续工作。
+`DiariZen/` 为上游仓库：体积大、有独立 git 历史，**不纳入本仓库**（仅 worker
+镜像构建时复制进去）。
 
-## ADG（标注应用）
+## 标注流程
+
+1. **上传音频**。首页「上传音频」，自动归一化为 16 kHz 单声道。
+2. **预标注**。两条路径：
+   - worker 构建完成后自动跑 DiariZen（见下）；
+   - 或本地跑出 RTTM 后在列表页「导入 RTTM」。
+3. **认领并标注**。点击「认领并标注」进入标注页：`J`/`K` 逐段走查试听，
+   改判（`1`–`9`）、拆分（`S`）、合并（`M`）、微调边界（`,`/`.`）、
+   新建说话人（`N`）。自动保存（2 秒防抖）。
+4. **标记完成并导出**。标注页「标记完成」；列表页按文件导出 RTTM，
+   或「导出全部已完成（zip）」。
+
+## 自动预标注（worker）
+
+worker 镜像含 torch（约 186 MB，本机实测该线路很慢），构建一次即可：
 
 ```bash
-cd ADG
-npm install
-npm run dev
+docker compose build worker
+docker compose --profile setup run --rm seed-models   # 下载权重（HuggingFace 需代理）
+docker compose up -d worker
 ```
 
-用法见 `ADG/USER_GUIDE.md`，架构见 `ADG/ARCHITECTURE.md`。
+未构建 worker 时用第 2 步的「导入 RTTM」路径即可，不影响主流程
+（本地跑 DiariZen 见 `diarizen-config/SETUP_CPU.md`）。
 
-## DiariZen（自动说话人分离）
+## 测试与验证
 
-DiariZen 上游代码体积较大且有独立的 git 历史，**不纳入本仓库**。
-用配置目录里的脚本自动拉取并配置：
-
-```powershell
-cd diarizen-config
-.\setup.ps1
+```bash
+docker compose --profile test run --rm test pytest -q     # 服务端
+cd ADG && npm test                                        # 前端
+cd ADG && node scripts/interact.mjs http://localhost:8000 <recordingId>   # 浏览器核对
 ```
 
-脚本会依次完成：clone 上游仓库 → 建 conda 环境 → 装 CPU 版依赖 → 拷入本目录的脚本
-→ 下载预训练权重（约 291 MB）。完成后：
+浏览器核对脚本会用本机 Chrome 逐个验证快捷键、持久化，并把时间轴渲染成字符画。
 
-```powershell
-conda activate diarizen
-cd ..\DiariZen
-python run_example_cpu.py                    # 跑自带的 30s 样例
-python run_example_cpu.py path\to\your.wav   # 跑自己的音频
+## 备份
+
+```bash
+sh server/scripts/backup.sh   # 数据库 + 音频卷 → ./backups/
 ```
 
-输出打印到终端，同时生成同名 `.rttm`（标准说话人分离标注格式）。
-
-30 秒音频在 10 线程 CPU 上推理约 31 秒（约 1x 实时）。
-
-安装细节、实测网络速率对比、以及三个容易踩的坑，见
-[`diarizen-config/SETUP_CPU.md`](diarizen-config/SETUP_CPU.md)。
+人工标注是这项目里最贵的数据，务必定期备份（建议另存异机/NAS）。细节见脚本注释。
 
 ## 许可
 
-- `ADG/` 为本项目自有代码。
+- `ADG/` 与 `server/` 为本项目自有代码。
 - DiariZen 代码为 MIT，但其**预训练权重是 CC BY-NC 4.0，仅限研究与学术用途，不可商用**。
   若本工具需要商用，必须替换权重或另行取得授权。

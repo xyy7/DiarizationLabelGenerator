@@ -75,22 +75,35 @@
 
 ### P0 — 会挡住实际标注
 
-- [ ] **无法新增说话人。** `SPLIT_SPEAKER` 在 `reducer.ts:194` 实现了但**没有 UI 入口**，
-      也没有「新建说话人」按钮。DiariZen 漏掉一个人时无法补——而 VBx 连人数都约束不了，
-      漏人是迟早的事。需要：工具栏「新建说话人」+ 把选中片段拆成新说话人。
+- [x] **新增/拆分说话人**（2026-08-29 完成）。说话人面板加「＋ 新建说话人」按钮 + 快捷键 `N`：
+      有选中片段 → `SPLIT_SPEAKER` 把这段拆给新说话人（VBx 两人并一个标签的首选修复）；
+      未选中 → 新增 `CREATE_SPEAKER` 建空说话人（漏人时画片段/数字键改判用）。
+      新标签取第一个空闲整数，跳过合并后留下的稀疏 label（保证 DiariZen 重跑可比）。
+      帮助面板与常驻快捷条已同步（ShortcutHelp `GROUPS` 是唯一事实来源）。
+      前端测试 43 → **47**，`interact.mjs` 新增 N 键断言，全绿。
 
 ### P1 — 会误导人
 
-- [ ] **三份文档全部过时**，照做会出错：
-  - `README.md` 仍写「两部分**尚未集成**」
-  - `ADG/ARCHITECTURE.md` 描述已删除的 `Label`/`Subtitle` 结构与 localStorage
-  - `ADG/USER_GUIDE.md` 把 `1`–`4` 写成倍速——**现在是改判说话人**
+- [x] **三份文档已更新**（2026-08-29）：
+      `README.md`（客户端–服务端流程、容器化、备份）、
+      `ADG/ARCHITECTURE.md`（重写：类型即服务端镜像、编辑缓冲 + 快照式撤销、共享时间轴）、
+      `ADG/USER_GUIDE.md`（重写：纠错工作流、含 `N` 的完整快捷键表；旧 v0.1.0 说明整段作废）。
 - [ ] 仓库结构待定：根目录与 `ADG/` 是两个独立 git 仓库（见第五节）
 
 ### P2 — 数据安全
 
-- [ ] **备份从未运行过**，`backups/` 为空。`server/scripts/backup.sh` 写好但没测过。
-      这是意图书里标为「风险①、应在阶段 1 就做」的事，被拖到了最后。
+- [x] **备份首次运行成功**（2026-08-29）。运行中**发现并修复了脚本两个隐蔽缺陷**，
+      **备份跑通 ≠ 备份可恢复**——首轮产出的 data 包实际是空卷（87 字节）：
+      1. MSYS2 把 Docker `-v` 参数里的容器侧 `/backup` 改写成了 Git 安装根目录
+         `D:/05-git/Git/backup`（`-v` 的每一段 POSIX 路径都会被转换）→ tar 打不开目标文件。
+         修法：Git Bash 下用 `pwd -W` 取 Windows 目录 + `MSYS_NO_PATHCONV=1`。
+      2. `compose config --format json` 的 `source` 是**符号名** `appdata`（带空格，原 sed 也不匹配），
+         回退路径 `tr -cd '[:alnum:]'` 又剥掉了项目名里的连字符——恰好命中旧版 compose 留下的
+         **空卷** `tool03audiolabelgenerate_appdata`。
+         修法：从运行中 api 容器的 mount 取真名（`docker inspect --format '{{range .Mounts}}...'`），
+         回退才用项目名约定。
+      核验：`pg_restore -l` 列出 33 个 TOC 条目；tar 内含 `audio/`、`exports/`。
+      `backups/` 里旧空包 `data-20260829-020350.tar.gz` 已删，保留三个 db dump。
 - [ ] 第二阶段动 schema 前必须先引入 Alembic（届时库里已有昂贵的人工标注，不能靠重建）
 
 ### P3 — 已知取舍，不急
@@ -107,7 +120,7 @@
 
 ## 五、需要你决定的事
 
-**仓库结构。** 根目录**不是** git 仓库，`ADG/` 是独立仓库且有 5 个历史提交。
+**仓库结构。** 根目录与 `ADG/` 是**两个独立 git 仓库**（根仓库含 server/，`ADG/` 独立且有多个历史提交）。
 本次已分别提交，但长期需要一个决定：
 
 - 保持两个仓库（现状，`ADG/` 在根仓库的 `.gitignore` 里）

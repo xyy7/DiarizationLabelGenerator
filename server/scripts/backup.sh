@@ -36,13 +36,38 @@ echo "    $BACKUP_DIR/db-$STAMP.dump"
 echo "==> audio + peaks volume"
 # Read the named volume through a throwaway container: the host has no direct
 # path to it, and stopping the api to copy files would be worse.
-VOLUME="$(docker compose config --format json \
-  | sed -n 's/.*"source":"\([^"]*appdata\)".*/\1/p' | head -n1)"
-VOLUME="${VOLUME:-$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')_appdata}"
+# The authoritative name comes from the RUNNING api container's own mount.
+# `compose config` cannot answer this: it prints the symbolic source
+# ("appdata"), and deriving the name by sanitising the directory loses the
+# hyphens -- which picks up a stale empty volume from an older compose
+# version if one happens to exist. (Both bit us.)
+CID="$(docker compose ps -q api 2>/dev/null | head -n1)"
+VOLUME=""
+if [ -n "$CID" ]; then
+  VOLUME="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' "$CID" 2>/dev/null)"
+fi
+if [ -z "$VOLUME" ]; then
+  VOLUME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]_-')_appdata"
+fi
+
+# The host side of the bind mount, in the form docker accepts:
+#   POSIX on Linux/macOS, Windows under Git Bash (where `pwd -W` prints it in
+#   `D:/...` form). Under MSYS, MSYS2 rewrites EVERY POSIX-looking piece of a
+#   -v argument -- "/backup" alone becomes "$MSYS_ROOT/backup" -- which is why
+#   the container side has to be protected with MSYS_NO_PATHCONV=1.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    HOST_BACKUP="$(cd "$BACKUP_DIR" && pwd -W)"
+    export MSYS_NO_PATHCONV=1
+    ;;
+  *)
+    HOST_BACKUP="$(cd "$BACKUP_DIR" && pwd -P)"
+    ;;
+esac
 
 docker run --rm \
   -v "$VOLUME":/data:ro \
-  -v "$(pwd)/$BACKUP_DIR":/backup \
+  -v "$HOST_BACKUP":/backup \
   alpine tar czf "/backup/data-$STAMP.tar.gz" -C /data .
 echo "    $BACKUP_DIR/data-$STAMP.tar.gz"
 
