@@ -5,3 +5,6 @@ build/
 .DS_Store
 .vscode/
 .trae/
+
+# 浏览器验证脚本产出的截图：随时可用 scripts/shot.mjs 重新生成
+scripts/shots/
