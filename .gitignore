@@ -14,9 +14,6 @@ models/
 # ……但 golden 测试 fixture 必须入库，否则测试套件跑不起来
 !server/tests/data/*.rttm
 
-# 前端是独立 git 仓库（有自己的历史）。合并方式待定，见 docs/HANDOFF.md 第五节。
-ADG/
-
 # 运行时数据与备份。必须写成 /data/ 只匹配根目录：写 data/ 会连
 # server/tests/data/ 一起排除，而被排除目录里的文件无法用 ! 重新纳入，
 # golden fixture 会静默丢失、测试套件跑不起来。

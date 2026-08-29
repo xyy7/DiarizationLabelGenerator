@@ -21,8 +21,11 @@ docker compose up -d db api     # 起服务；前端由 api 直接托管
 | `docs/` | 意图书（`intent/`）、技术方案（`spec/`）、交接文档（`HANDOFF.md`） |
 | `diarizen-config/` | DiariZen 纯 CPU 环境配置与推理脚本，以及权重下载脚本（worker/verify 镜像用） |
 
+`ADG/` 已并入本仓库：前端与 server 同一 git 仓库演进（此前 `ADG/` 是独立 git
+仓库，其 13 个提交经前缀重放合并保留，原始哈希备份在 `backups/adg-history-20260830.bundle`；
+`git log -- ADG/` 可正常追溯，详见 `docs/HANDOFF.md` 第五节）。
 `DiariZen/` 为上游仓库：体积大、有独立 git 历史，**不纳入本仓库**（仅 worker
-镜像构建时复制进去）。
+镜像构建时复制进去，由 `diarizen-config/setup.ps1` 负责拉取）。
 
 ## 标注流程
 
