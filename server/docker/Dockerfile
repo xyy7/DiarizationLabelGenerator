@@ -52,10 +52,12 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # -------------------------------------------------------------- worker -----
 FROM api AS worker
 
-# The default PyPI torch wheel bundles CUDA (~800 MB) and is pure waste on a
-# CPU deployment. The CPU index serves the same version without it.
+# Build-time torch flavour. Default CPU: the PyPI wheel bundles CUDA (~800 MB)
+# and is pure waste on a CPU-only box. GPU machines build with
+# `--build-arg TORCH_VARIANT=cu118` (torch 2.1.1's CUDA 11.8 wheel).
+ARG TORCH_VARIANT=cpu
 RUN pip install --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cpu \
+      --index-url https://download.pytorch.org/whl/${TORCH_VARIANT} \
       torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1
 
 # The vendored pyannote-audio is MODIFIED upstream (it adds VBxClustering,
@@ -76,6 +78,21 @@ COPY diarizen-config/download_models.py /srv/scripts/download_models.py
 # keeping them out of the image keeps the image itself redistributable. The
 # seed-models service populates the shared volume instead.
 CMD ["python", "-m", "app.worker.worker"]
+
+# -------------------------------------------------------------- verify -----
+# Speaker-verification service (eres2net): the same torch image as the worker
+# plus modelscope's runtime, run as its own uvicorn app on :8001. The API
+# calls it; the browser never does.
+FROM worker AS verify
+
+# modelscope <=1.39 does not declare its runtime deps in PyPI metadata
+# (verified the hard way, 2026-08-29); pip install modelscope alone leaves
+# the package import-broken. Pin the three it actually needs.
+RUN pip install --no-cache-dir "modelscope>=1.38,<1.42" \
+      addict simplejson "datasets>=3"
+
+EXPOSE 8001
+CMD ["uvicorn", "app.verify.server:app", "--host", "0.0.0.0", "--port", "8001"]
 
 # ---------------------------------------------------------------- test -----
 # Built from `api`, not `worker`: the suite stubs the pipeline rather than

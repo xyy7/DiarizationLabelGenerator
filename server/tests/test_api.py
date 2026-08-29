@@ -239,6 +239,21 @@ def test_overlapping_segments_survive_a_round_trip(client, wav_bytes):
     assert a["end_sec"] > b["start_sec"]
 
 
+def test_is_stable_survives_save_and_reload(client, wav_bytes):
+    rec = upload(client, wav_bytes).json()
+    url = f"/api/recordings/{rec['id']}/annotation"
+    payload = annotation_payload()
+    payload["segments"][0]["is_stable"] = True
+
+    client.put(url, json=payload, headers=HEADERS)
+    segments = client.get(url).json()["segments"]
+
+    # The flag belongs to the segment carrying it, and the saved doc round-trips.
+    saved = {s["id"] for s in segments if s["is_stable"]}
+    assert saved, "is_stable must not be dropped by save_annotation"
+    assert any(s["end_sec"] >= segments[0]["end_sec"] for s in segments)
+
+
 def test_stale_version_is_rejected(client, wav_bytes):
     rec = upload(client, wav_bytes).json()
     url = f"/api/recordings/{rec['id']}/annotation"

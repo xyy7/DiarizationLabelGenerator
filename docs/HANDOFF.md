@@ -188,3 +188,45 @@ docker compose build worker
 docker compose --profile setup run --rm seed-models
 docker compose up -d worker
 ```
+
+---
+
+## 八、二期：说话人相似度识别（2026-08-29 同期）
+
+完整链路：意图 [`intent/speaker-similarity.md`](intent/speaker-similarity.md) →
+方案 [`spec/speaker-similarity.md`](spec/speaker-similarity.md) →
+任务 [`tasks/`](../tasks/)。**已实现、已部署本机、E2E 通过**。
+
+### 做了什么
+
+- **数据层**：`segments.is_stable`（稳定音频标志，不入 RTTM）+ `segment_embeddings`
+  缓存表（按音频内容键控，改判不失效、重叠共享）。
+- **新 `verify` 容器**（`FROM worker AS verify`，:8001）：eres2net（modelscope
+  离线加载，55M/192 维，CPU 实测 0.4× 实时）；`app/verify/{engine,service,server}.py`；
+  GPU 为构建参数 `TORCH_VARIANT` + 运行 `EMBEDDING_DEVICE=auto`（`docker-compose.gpu.yml`）。
+- **API**：`POST /api/recordings/{id}/similarity`（时间窗口定位，422/503 规范）；
+  标注保存后 fire-and-forget 预计算缓存。
+- **前端**：片段右键菜单（自动识别/设为稳定/删除）、★ 稳定徽标、`I` 快捷键、
+  `SimilarityPanel`（本段与逐候选试听、多选=重叠改判、走 undo/自动保存）；
+  工具栏**音量增益 50%–500%**（默认 100% 原生路径；>100% 才接 WebAudio 增益链）。
+- **配置**：`server/app/config.py`（verify_url / embedding_device）、
+  `download_models.py`（SDK 拉取 eres2net）、README / 帮助面板同步。
+
+### 验证到什么程度
+
+```
+服务端   119 passed   docker compose --profile test run --rm test pytest -q
+前端     58 passed    cd ADG && npm test；tsc 零错误；vite build 通过
+端到端   python scripts/e2e_similarity.py —— 相似度 98.3% 排名正确、
+        缓存 730ms→6ms、重叠双行 RTTM ✓；verify /healthz 在线
+手动     CDP 实测：短段(J 走查)停在段尾属设计行为；播放链路事件正常
+```
+
+### 遗留（未关闭）
+
+- [ ] **用户环境“播放无声音”仍在调查**（应用链路已排除，方向：系统输出设备/
+      音量合成器——见 spec §11 与本轮会话记录；待用户做 ①直接开 audio URL ②合成器滑块 ③其他软件对照）。
+- [ ] **ModelScope 当日后端故障**，models 卷 eres2net 权重为本机副本注入；
+      MS 恢复后重跑 `docker compose --profile setup run --rm seed-models` 验证脚本路径。
+- [ ] 结论：`db+api` 最小部署不受影响；相似度依赖 verify，未启动时前端 503 文案提示。
+- [ ] 三数据库/测试计数口径：本文件第七节的“服务端 96/前端 43”为**一期**数字；本期见上表。

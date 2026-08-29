@@ -15,11 +15,11 @@ docker compose up -d db api     # 起服务；前端由 api 直接托管
 
 | 目录 | 内容 |
 |---|---|
-| `server/` | FastAPI + Postgres：音频归档、预标注任务队列（worker）、标注存取、RTTM 导出 |
+| `server/` | FastAPI + Postgres：音频归档、预标注任务队列（worker）、标注存取、RTTM 导出；`app/verify/` 为说话人相似度服务 |
 | `ADG/` | 前端标注应用（Vite + React + TS）：列表认领 + 快捷键为主的纠错交互 |
-| `docker-compose.yml` | db / api / worker / seed-models / test |
-| `docs/` | 意图书（`intent/adg-refactor.md`）、交接文档（`HANDOFF.md`） |
-| `diarizen-config/` | DiariZen 纯 CPU 环境配置与推理脚本，以及权重下载脚本（worker 镜像用） |
+| `docker-compose.yml` | db / api / worker / verify / seed-models / test（GPU 见 `docker-compose.gpu.yml`） |
+| `docs/` | 意图书（`intent/`）、技术方案（`spec/`）、交接文档（`HANDOFF.md`） |
+| `diarizen-config/` | DiariZen 纯 CPU 环境配置与推理脚本，以及权重下载脚本（worker/verify 镜像用） |
 
 `DiariZen/` 为上游仓库：体积大、有独立 git 历史，**不纳入本仓库**（仅 worker
 镜像构建时复制进去）。
@@ -33,7 +33,14 @@ docker compose up -d db api     # 起服务；前端由 api 直接托管
 3. **认领并标注**。点击「认领并标注」进入标注页：`J`/`K` 逐段走查试听，
    改判（`1`–`9`）、拆分（`S`）、合并（`M`）、微调边界（`,`/`.`）、
    新建说话人（`N`）。自动保存（2 秒防抖）。
-4. **标记完成并导出**。标注页「标记完成」；列表页按文件导出 RTTM，
+   工具栏「音量 %」按钮可调 **50%–500%**（超过 100% 为数字增益 + 限幅，
+   同视频站点做法；默认 100% 走原生路径，不经过 WebAudio）。
+4. **声音识别辅助（可选，需 verify 容器）**。右键片段 →「设为稳定音频」
+   （该说话人的参考声纹，建议 2~5 段且 ≥2s）；对拿不准的片段点右键 →
+   「自动识别相似度…」（或选中后按 `I`），面板按 eres2net 相似度列出各
+   说话人，每段稳定音频可以试听对照，勾选后一键改判；**勾多个说话人 =
+   这段同时属于多人（重叠标注）**，导出 RTTM 以多层重叠正确表达。
+5. **标记完成并导出**。标注页「标记完成」；列表页按文件导出 RTTM，
    或「导出全部已完成（zip）」。
 
 ## 自动预标注（worker）
@@ -48,6 +55,29 @@ docker compose up -d worker
 
 未构建 worker 时用第 2 步的「导入 RTTM」路径即可，不影响主流程
 （本地跑 DiariZen 见 `diarizen-config/SETUP_CPU.md`）。
+
+## 声音识别（verify，可选）
+
+相似度功能需要一个额外的 verify 容器（eres2net，模型来自魔搭社区）：
+
+```bash
+docker compose build verify
+docker compose --profile setup run --rm seed-models   # 一并下载 eres2net 权重（~221 MB，modelscope.cn 直连）
+docker compose up -d verify
+```
+
+未起 verify 时自动识别不可用（面板会提示），**其它一切功能照常**；
+`db + api` 的最小部署模式不受影响。
+
+**GPU**：verify 会在有 CUDA 设备时自动使用（`EMBEDDING_DEVICE=auto`）。
+容器需要 CUDA 版 torch，且要构建并起用 GPU 覆盖文件：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build verify
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d verify
+```
+
+无 GPU 机器始终走 CPU（实测约 0.4× 实时，单次右键识别 1~3 秒级）。
 
 ## 测试与验证
 
@@ -72,3 +102,5 @@ sh server/scripts/backup.sh   # 数据库 + 音频卷 → ./backups/
 - `ADG/` 与 `server/` 为本项目自有代码。
 - DiariZen 代码为 MIT，但其**预训练权重是 CC BY-NC 4.0，仅限研究与学术用途，不可商用**。
   若本工具需要商用，必须替换权重或另行取得授权。
+- eres2net 说话人识别模型（`iic/speech_eres2net_sv_zh-cn_16k-common`，魔搭社区）
+  同为 **CC BY-NC 4.0**，仅限研究与学术用途。

@@ -41,6 +41,7 @@ class SegmentIn:
     end_sec: float
     text: str = ""
     id: uuid.UUID | None = None
+    is_stable: bool = False
 
 
 class SegmentRow(Protocol):

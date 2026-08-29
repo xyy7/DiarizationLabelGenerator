@@ -28,6 +28,17 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Web UI for browsing the database: http://localhost:8080
+  # Login: server=db, user=adg, password=adg, db=adg
+  dbweb:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -36,6 +47,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://adg:adg@db:5432/adg
       DATA_DIR: /data
+      # Where the speaker-verification service lives on the compose network.
+      VERIFY_URL: http://verify:8001
     volumes:
       - appdata:/data
       # Built frontend, served as static files by the API.
@@ -68,13 +81,41 @@ services:
     # on restart the claim query picks it back up. Nothing is stranded.
     restart: unless-stopped
 
+  # Speaker verification (eres2net). Optional during annotation: the similarity
+  # endpoint answers 503 with a message until this is running. GPU machines:
+  # build with TORCH_VARIANT=cu118 and add docker-compose.gpu.yml.
+  verify:
+    build:
+      context: .
+      dockerfile: server/docker/Dockerfile
+      target: verify
+      args:
+        TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
+    environment:
+      DATABASE_URL: postgresql+psycopg://adg:adg@db:5432/adg
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      # auto = use CUDA when present, CPU otherwise.
+      EMBEDDING_DEVICE: auto
+      TORCH_NUM_THREADS: 10
+    volumes:
+      # Audio and models are both read-only here: computing never writes.
+      - appdata:/data:ro
+      - models:/models:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   # One-shot: docker compose run --rm seed-models
-  # Downloads the CC BY-NC 4.0 weights (~292 MB) into the models volume.
+  # Downloads the CC BY-NC 4.0 weights (DiariZen ~292 MB + eres2net ~221 MB)
+  # into the models volume. Built from `verify` because the eres2net weights
+  # are fetched with the modelscope SDK.
   seed-models:
     build:
       context: .
       dockerfile: server/docker/Dockerfile
-      target: worker
+      target: verify
     environment:
       MODELS_DIR: /models
       # huggingface.co is not directly reachable from this network. Inside a

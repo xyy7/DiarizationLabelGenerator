@@ -63,6 +63,7 @@ class SegmentIO(BaseModel):
     start_sec: float
     end_sec: float
     text: str = ""
+    is_stable: bool = False
 
 
 class AnnotationOut(BaseModel):
@@ -99,3 +100,46 @@ class AnnotationSaved(BaseModel):
 
 class ClaimIn(BaseModel):
     force: bool = False
+
+
+class SimilarityBody(BaseModel):
+    """The window the annotator right-clicked; located by time, not by id.
+
+    Time-based on purpose: the frontend may right-click a segment that has
+    never reached the server (a tmp- id still pending autosave), and the
+    embedding is a function of the audio in the window either way.
+    """
+
+    start_sec: float
+    end_sec: float
+
+
+class SimilarityClip(BaseModel):
+    segment_id: uuid.UUID | None = None
+    start_sec: float
+    end_sec: float
+    score: float
+    short: bool = False
+
+
+class SimilarityItem(BaseModel):
+    """One speaker row: its representative score plus per-clip detail."""
+
+    label: str
+    name: str
+    color: str
+    best_score: float
+    clips: list[SimilarityClip]
+
+
+class SimilarityQuery(BaseModel):
+    start_sec: float
+    end_sec: float
+    short: bool = False
+
+
+class SimilarityResult(BaseModel):
+    query: SimilarityQuery
+    items: list[SimilarityItem]
+    unranked: list[SpeakerIO]
+    elapsed_ms: int = 0

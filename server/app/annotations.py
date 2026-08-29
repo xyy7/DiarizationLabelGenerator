@@ -129,6 +129,7 @@ def save_annotation(
                     "start_sec": s.start_sec,
                     "end_sec": s.end_sec,
                     "text": s.text,
+                    "is_stable": s.is_stable,
                 }
                 for s in kept
             ],

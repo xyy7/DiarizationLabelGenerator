@@ -170,3 +170,32 @@ def test_export_drops_text():
 
     assert "今天天气不错" not in line
     assert line.split()[5] == "<NA>"
+
+
+def test_overlapping_turns_round_trip_through_rttm():
+    """Two speakers over the same window survive export -> import unchanged.
+
+    Multi-speaker overlap is recorded as two turns sharing a time range; the
+    serializer is the single path every byte leaves through, so it must not
+    mangle it.
+    """
+    turns = segments_to_rttm(
+        [SegmentIn("0", 0.0, 10.0), SegmentIn("1", 0.0, 10.0)], "rec"
+    )
+
+    uri, parsed = parse(serialize("rec", turns))
+
+    assert uri == "rec"
+    assert parsed == turns
+
+
+def test_stable_flag_never_reaches_rttm():
+    """is_stable is annotation metadata; the RTTM bytes must not change."""
+    plain = serialize(
+        "rec", segments_to_rttm([SegmentIn("0", 0.0, 1.0)], "rec")
+    )
+    stable = serialize(
+        "rec", segments_to_rttm([SegmentIn("0", 0.0, 1.0, is_stable=True)], "rec")
+    )
+
+    assert stable == plain

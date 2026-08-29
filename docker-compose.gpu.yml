@@ -1,0 +1,16 @@
+# GPU override for the speaker-verification service.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml build verify
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d verify
+#
+# Builds the CUDA torch wheel (much larger: ~800 MB more in the image) and
+# hands the device to the verify container. EMBEDDING_DEVICE=auto then selects
+# CUDA at runtime; when no device is attached it falls back to CPU silently.
+# The diarization worker is not covered here: it stays CPU by design.
+
+services:
+  verify:
+    build:
+      args:
+        TORCH_VARIANT: cu118
+    gpus: all

@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -20,7 +21,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -135,6 +136,9 @@ class Segment(Base):
     start_sec: Mapped[float] = mapped_column(Float, nullable=False)
     end_sec: Mapped[float] = mapped_column(Float, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_stable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -152,6 +156,30 @@ class Segment(Base):
             ["speakers.recording_id", "speakers.label"],
             ondelete="CASCADE",
         ),
+    )
+
+
+class SegmentEmbedding(Base):
+    """Cached speaker embedding for one audio window (see schema.sql).
+
+    Keyed by content, not by segment id: rewriting an annotation replaces all
+    segment rows, but the embedding of a window is unchanged unless its audio
+    outcome changes -- i.e. the (start_sec, end_sec) pair or model_id.
+    """
+
+    __tablename__ = "segment_embeddings"
+
+    recording_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    start_sec: Mapped[float] = mapped_column(Float, primary_key=True)
+    end_sec: Mapped[float] = mapped_column(Float, primary_key=True)
+    model_id: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list] = mapped_column(JSONB, nullable=False)  # 192 floats
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -192,6 +220,7 @@ __all__ = [
     "Recording",
     "Speaker",
     "Segment",
+    "SegmentEmbedding",
     "Job",
     "RECORDING_STATUSES",
     "JOB_STATUSES",

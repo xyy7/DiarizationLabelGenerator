@@ -67,12 +67,33 @@ CREATE TABLE IF NOT EXISTS segments (
     end_sec       DOUBLE PRECISION NOT NULL,
     -- Phase 2 (subtitles). Never reaches RTTM: see app/rttm.py.
     text          TEXT NOT NULL DEFAULT '',
+    -- Reference-audio designation for speaker verification. Never reaches RTTM.
+    is_stable     BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT segments_start_check CHECK (start_sec >= 0),
     CONSTRAINT segments_order_check CHECK (end_sec > start_sec),
     FOREIGN KEY (recording_id, speaker_label)
         REFERENCES speakers (recording_id, label) ON DELETE CASCADE
+);
+
+-- Existing databases predate the column; CREATE IF NOT EXISTS cannot add it.
+ALTER TABLE segments ADD COLUMN IF NOT EXISTS is_stable BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Speaker-embedding cache for the speaker-verification feature. Keyed by AUDIO
+-- CONTENT (start/end), never by segment id: a segment's embedding is a function
+-- of the audio in its window, so a re-assign of the label must not invalidate
+-- it, save()'s delete-and-reinsert of segments must not drop it, and two
+-- speakers sharing a window legitimately share one row. model_id is on the row
+-- so a model change triggers a refresh; computed_at is for diagnostics.
+CREATE TABLE IF NOT EXISTS segment_embeddings (
+    recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+    start_sec    DOUBLE PRECISION NOT NULL,
+    end_sec      DOUBLE PRECISION NOT NULL,
+    model_id     TEXT NOT NULL,
+    embedding    JSONB NOT NULL,
+    computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (recording_id, start_sec, end_sec)
 );
 
 -- Deliberately no exclusion constraint against overlap. Overlapping speech is

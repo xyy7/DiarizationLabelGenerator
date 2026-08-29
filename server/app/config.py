@@ -49,6 +49,14 @@ class Settings:
     # A claim left behind by someone who wandered off can be taken over.
     claim_stale_hours: int = _int("CLAIM_STALE_HOURS", 2)
 
+    # Speaker-verification service. The API never touches torch; it proxies to
+    # this on the compose network. Empty when no verify container is up -- the
+    # /similarity endpoint answers 503 with a message instead of crashing.
+    verify_url: str = os.environ.get("VERIFY_URL", "http://verify:8001")
+
+    # auto | cpu | cuda. auto uses CUDA when torch finds a usable device.
+    embedding_device: str = os.environ.get("EMBEDDING_DEVICE", "auto")
+
     @property
     def audio_dir(self) -> Path:
         return self.data_dir / "audio"

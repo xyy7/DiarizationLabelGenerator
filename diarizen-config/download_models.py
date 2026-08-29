@@ -21,20 +21,36 @@ import requests
 
 
 HERE = Path(__file__).parent.resolve()
-BASE = "https://huggingface.co/{repo}/resolve/main/{name}"
+HF_BASE = "https://huggingface.co/{repo}/resolve/main/{name}"
 
 # The embedding directory MUST contain "pyannote": pyannote's PretrainedSpeakerEmbedding
 # dispatches on substrings of the path and tests "pyannote" before "wespeaker". A path
 # matching only "wespeaker" is routed to the ONNX loader, which cannot read these weights.
 FILES = [
-    ("BUT-FIT/diarizen-wavlm-large-s80-md", "config.toml", "diarizen-wavlm-large-s80-md"),
-    ("BUT-FIT/diarizen-wavlm-large-s80-md", "config.json", "diarizen-wavlm-large-s80-md"),
-    ("BUT-FIT/diarizen-wavlm-large-s80-md", "plda/plda.npz", "diarizen-wavlm-large-s80-md"),
-    ("BUT-FIT/diarizen-wavlm-large-s80-md", "plda/xvec_transform.npz", "diarizen-wavlm-large-s80-md"),
-    ("BUT-FIT/diarizen-wavlm-large-s80-md", "pytorch_model.bin", "diarizen-wavlm-large-s80-md"),
-    ("pyannote/wespeaker-voxceleb-resnet34-LM", "config.yaml", "pyannote-wespeaker-voxceleb-resnet34-LM"),
-    ("pyannote/wespeaker-voxceleb-resnet34-LM", "pytorch_model.bin", "pyannote-wespeaker-voxceleb-resnet34-LM"),
+    {"url": HF_BASE.format(repo="BUT-FIT/diarizen-wavlm-large-s80-md", name="config.toml"),
+     "dest": "diarizen-wavlm-large-s80-md/config.toml"},
+    {"url": HF_BASE.format(repo="BUT-FIT/diarizen-wavlm-large-s80-md", name="config.json"),
+     "dest": "diarizen-wavlm-large-s80-md/config.json"},
+    {"url": HF_BASE.format(repo="BUT-FIT/diarizen-wavlm-large-s80-md", name="plda/plda.npz"),
+     "dest": "diarizen-wavlm-large-s80-md/plda/plda.npz"},
+    {"url": HF_BASE.format(repo="BUT-FIT/diarizen-wavlm-large-s80-md", name="plda/xvec_transform.npz"),
+     "dest": "diarizen-wavlm-large-s80-md/plda/xvec_transform.npz"},
+    {"url": HF_BASE.format(repo="BUT-FIT/diarizen-wavlm-large-s80-md", name="pytorch_model.bin"),
+     "dest": "diarizen-wavlm-large-s80-md/pytorch_model.bin"},
+    {"url": HF_BASE.format(repo="pyannote/wespeaker-voxceleb-resnet34-LM", name="config.yaml"),
+     "dest": "pyannote-wespeaker-voxceleb-resnet34-LM/config.yaml"},
+    {"url": HF_BASE.format(repo="pyannote/wespeaker-voxceleb-resnet34-LM", name="pytorch_model.bin"),
+     "dest": "pyannote-wespeaker-voxceleb-resnet34-LM/pytorch_model.bin"},
 ]
+
+# ModelScope repo for the speaker-verification model. Downloaded with the
+# modelscope SDK (snapshot_download), NOT by hand-rolling URLs: its per-file
+# API is flaky and occasionally serves 404/500 from this network (observed
+# 2026-08-29), while the SDK retries internally and downloads the same bytes
+# fine (221 MB checkpoint, verified twice). The checkpoint really is
+# pretrained_eres2net_aug.ckpt (3D-Speaker style, NOT pytorch_model.bin).
+ERES_MODEL_ID = "iic/speech_eres2net_sv_zh-cn_16k-common"
+ERES_DIR_NAME = "eres2net-sv-zh-cn-16k-common"
 
 CHUNK = 1 << 20  # 1 MiB
 
@@ -94,11 +110,11 @@ def main():
     session = requests.Session()
     failed = []
 
-    for repo, name, subdir in FILES:
-        url = BASE.format(repo=repo, name=name)
-        dest = root / subdir / name
+    for entry in FILES:
+        dest = root / entry["dest"]
+        name = dest.name
         try:
-            download(url, dest, session)
+            download(entry["url"], dest, session)
         except Exception as exc:
             print(f"  FAILED  {name}: {type(exc).__name__}: {exc}")
             failed.append(name)
@@ -106,6 +122,26 @@ def main():
     if failed:
         print(f"\n{len(failed)} file(s) failed: {', '.join(failed)}")
         print("re-run to resume from where each left off.")
+        return 1
+
+    # ModelScope via its own SDK. The seed image is built from the verify
+    # target precisely because it carries modelscope (see docker-compose.yml).
+    dest_dir = root / ERES_DIR_NAME
+    try:
+        from modelscope import snapshot_download
+    except ImportError as exc:
+        print(f"  FAILED  eres2net: modelscope is not installed: {exc}")
+        print("  the seed image must be built from the `verify` target.")
+        return 1
+
+    print(f"  ms      {ERES_MODEL_ID}  ->  {dest_dir}")
+    try:
+        if not (dest_dir / "pretrained_eres2net_aug.ckpt").exists():
+            snapshot_download(ERES_MODEL_ID, local_dir=str(dest_dir))
+        else:
+            print(f"  ok      pretrained_eres2net_aug.ckpt  (already complete)")
+    except Exception as exc:
+        print(f"  FAILED  eres2net: {type(exc).__name__}: {exc}")
         return 1
 
     print("\nall models present.")

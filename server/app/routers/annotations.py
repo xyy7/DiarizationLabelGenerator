@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
+
+log = logging.getLogger(__name__)
 
 from app import annotations as store
 from app.db import get_db
@@ -25,14 +29,27 @@ from app.schemas import (
     AnnotationOut,
     AnnotationSaved,
     SegmentIO,
+    SimilarityBody,
+    SimilarityResult,
     SpeakerIO,
 )
+from app.verify_client import VerifyUnavailable, get_verify_client
 
 router = APIRouter(prefix="/api/recordings", tags=["annotations"])
 
 # Statuses that mean "no usable annotation yet"; importing one makes the
 # recording claimable.
 _PRE_ANNOTATION = {"uploaded", "queued", "running", "failed"}
+
+
+def _precompute_safe(recording_id: uuid.UUID) -> None:
+    """Warm the embedding cache. Fire-and-forget by contract: a verify hiccup
+    must never turn a successful annotation save into a failure for the user.
+    """
+    try:
+        get_verify_client().precompute(recording_id)
+    except Exception:
+        log.exception("verify precompute failed for %s", recording_id)
 
 
 @router.get("/{recording_id}/annotation", response_model=AnnotationOut)
@@ -49,6 +66,7 @@ def read(recording: Recording = Depends(get_recording), db=Depends(get_db)):
 @router.put("/{recording_id}/annotation", response_model=AnnotationSaved)
 def save(
     body: AnnotationIn,
+    background_tasks: BackgroundTasks,
     recording: Recording = Depends(get_recording),
     db=Depends(get_db),
     user: User = Depends(current_user),
@@ -74,6 +92,10 @@ def save(
     except AnnotationError as exc:
         raise HTTPException(422, {"code": "invalid", "message": str(exc)}) from None
 
+    # Stable-segment embeddings may have changed; warm the cache off the
+    # critical path. _precompute_safe must never break a successful save.
+    background_tasks.add_task(_precompute_safe, recording.id)
+
     # Adjustments are reported, never applied in silence: a boundary the server
     # moved is something the annotator needs to see.
     return AnnotationSaved(
@@ -84,6 +106,7 @@ def save(
 
 @router.post("/{recording_id}/annotation/rttm", response_model=AnnotationSaved)
 def import_rttm(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     version: int = Form(..., description="the annotation version you are replacing"),
     allow_uri_mismatch: bool = Form(False),
@@ -173,10 +196,58 @@ def import_rttm(
         recording.updated_at = datetime.now(timezone.utc)
         db.commit()
 
+    background_tasks.add_task(_precompute_safe, recording.id)
+
     return AnnotationSaved(
         version=new_version,
         adjustments=[AdjustmentOut(**a.__dict__) for a in adjustments],
     )
+
+
+@router.post("/{recording_id}/similarity", response_model=SimilarityResult)
+def similarity(
+    body: SimilarityBody,
+    recording: Recording = Depends(get_recording),
+    db=Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Ranked similarity of one audio window against all stable segments.
+
+    The panel this feeds shows speakers and per-clip scores; how they are
+    computed is the verify service's business. This endpoint exists so the
+    browser never learns an internal URL, and so a down verify container
+    answers a 503 with an explainable message instead of a browser stack.
+    """
+    if body.end_sec <= body.start_sec:
+        raise HTTPException(
+            422, {"code": "invalid", "message": "end must be greater than start"}
+        )
+    if body.start_sec < 0 or body.end_sec > recording.duration_sec:
+        raise HTTPException(
+            422,
+            {
+                "code": "invalid",
+                "message": (
+                    f"window {body.start_sec}-{body.end_sec} outside audio "
+                    f"(duration {recording.duration_sec})"
+                ),
+            },
+        )
+
+    try:
+        data = get_verify_client().similarity(
+            recording.id, body.start_sec, body.end_sec
+        )
+    except VerifyUnavailable as exc:
+        raise HTTPException(
+            503,
+            {
+                "code": "verify_unavailable",
+                "message": f"{exc}. Start the verify service to use identification.",
+            },
+        ) from None
+
+    return SimilarityResult.model_validate(data)
 
 
 @router.get("/{recording_id}/rttm", response_class=PlainTextResponse)
