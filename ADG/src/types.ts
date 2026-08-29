@@ -49,6 +49,8 @@ export interface Segment {
   start_sec: number;
   end_sec: number;
   text: string;
+  /** Reference audio for speaker verification; never exported to RTTM. */
+  is_stable: boolean;
 }
 
 export interface Annotation {
@@ -69,6 +71,39 @@ export interface Adjustment {
 export interface SaveResult {
   version: number;
   adjustments: Adjustment[];
+}
+
+/** Audio window located by time: the embedding depends on content, not ids. */
+export interface SimilarityQuery {
+  start_sec: number;
+  end_sec: number;
+  short: boolean;
+}
+
+/** One reference clip's similarity to the queried window. */
+export interface SimilarityClip {
+  segment_id: string | null;
+  start_sec: number;
+  end_sec: number;
+  score: number;
+  short: boolean;
+}
+
+/** One speaker row: representative score plus per-clip detail. */
+export interface SimilarityItem {
+  label: string;
+  name: string;
+  color: string;
+  best_score: number;
+  clips: SimilarityClip[];
+}
+
+/** What POST /similarity returns; unranked speakers have no stable audio. */
+export interface SimilarityResult {
+  query: SimilarityQuery;
+  items: SimilarityItem[];
+  unranked: Speaker[];
+  elapsed_ms: number;
 }
 
 export interface Job {

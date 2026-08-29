@@ -11,8 +11,8 @@ const SPEAKERS: Speaker[] = [
 ];
 
 const SEGMENTS: Segment[] = [
-  { id: 'a', speaker_label: '0', start_sec: 1, end_sec: 5, text: '' },
-  { id: 'b', speaker_label: '1', start_sec: 6, end_sec: 9, text: '' },
+  { id: 'a', speaker_label: '0', start_sec: 1, end_sec: 5, text: '', is_stable: false },
+  { id: 'b', speaker_label: '1', start_sec: 6, end_sec: 9, text: '', is_stable: false },
 ];
 
 function loaded(): EditState {
@@ -26,6 +26,41 @@ function run(state: EditState, ...actions: Action[]): EditState {
 }
 
 beforeEach(() => resetIdCounter());
+
+describe('speaker identification edits', () => {
+  it('reassigns to several speakers as one undoable step', () => {
+    const state = run(loaded(), { type: 'REASSIGN_MULTI', id: 'a', labels: ['1', '0'] });
+
+    // Same window on two speakers: overlap is expressed as coexisting rows.
+    expect(state.segments.filter((s) => s.start_sec === 1 && s.end_sec === 5))
+      .toHaveLength(2);
+    expect(state.dirty).toBe(true);
+    expect(state.notice).toContain('重叠');
+    expect(reducer(state, { type: 'UNDO' }).segments).toEqual(SEGMENTS);
+  });
+
+  it('toggling stable is undoable and announced', () => {
+    const state = run(loaded(), { type: 'TOGGLE_STABLE', id: 'a' });
+
+    expect(state.segments.find((s) => s.id === 'a')?.is_stable).toBe(true);
+    expect(state.notice).toContain('稳定音频');
+    expect(reducer(state, { type: 'UNDO' }).segments).toEqual(SEGMENTS);
+  });
+
+  it('overlapping rows are editable independently afterwards', () => {
+    const state = run(
+      loaded(),
+      { type: 'REASSIGN_MULTI', id: 'a', labels: ['1', '0'] },
+      { type: 'SET_BOUNDARY', id: 'a', edge: 'end', time: 4 },
+    );
+
+    // The original row moved; the copy to speaker 1 kept the old boundary.
+    const original = state.segments.find((s) => s.id === 'a');
+    const copy = state.segments.find((s) => s.speaker_label === '1' && s.start_sec === 1);
+    expect(original?.end_sec).toBe(4);
+    expect(copy?.end_sec).toBe(5);
+  });
+});
 
 describe('loading', () => {
   it('starts clean with no history', () => {
@@ -187,8 +222,8 @@ describe('speaker operations', () => {
   it('reports when merging speakers coalesced overlaps', () => {
     const state = reducer(
       { ...loaded(), segments: [
-        { id: 'a', speaker_label: '0', start_sec: 1, end_sec: 6, text: '' },
-        { id: 'b', speaker_label: '1', start_sec: 4, end_sec: 8, text: '' },
+        { id: 'a', speaker_label: '0', start_sec: 1, end_sec: 6, text: '', is_stable: false },
+        { id: 'b', speaker_label: '1', start_sec: 4, end_sec: 8, text: '', is_stable: false },
       ] },
       { type: 'MERGE_SPEAKERS', from: '1', into: '0' },
     );

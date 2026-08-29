@@ -13,16 +13,20 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Empty, Modal, Space, Spin, Tag, Tooltip, message } from 'antd';
+import { Button, Empty, Menu, Modal, Popover, Slider, Space, Spin, Tag, Tooltip, message } from 'antd';
 import type WaveSurfer from 'wavesurfer.js';
 
 import Timeline from '../components/Timeline';
+import SimilarityPanel from '../components/SimilarityPanel';
 import ShortcutHelp, { ShortcutBar } from '../components/ShortcutHelp';
 import { api, ApiError } from '../api/client';
 import { canRedo, canUndo, initialState, reducer } from '../annotation/reducer';
 import { find, nextSegment, prevSegment } from '../annotation/operations';
+import {
+  attach as attachVolume, BOOST_MAX, BOOST_MIN, getBoost, resume as resumeVolume, setBoost as setBoostVolume,
+} from '../audio/masterVolume';
 import { PALETTE } from '../palette';
-import type { Recording } from '../types';
+import type { Recording, Segment } from '../types';
 
 const AUTOSAVE_MS = 2000;
 const NUDGE = 0.01;
@@ -42,6 +46,10 @@ export default function Annotator() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Right-click menu target and the identify panel's segment.
+  const [menu, setMenu] = useState<{ segment: Segment; x: number; y: number } | null>(null);
+  const [panelSegId, setPanelSegId] = useState<string | null>(null);
+  const [boostPct, setBoostPct] = useState(() => Math.round(getBoost() * 100));
 
   const wsRef = useRef<WaveSurfer | null>(null);
   // Stops playback at the end of a single segment when auditioning one.
@@ -143,6 +151,7 @@ export default function Annotator() {
     if (!seg || !ws) return;
     playUntil.current = seg.end_sec;
     seek(seg.start_sec);
+    resumeVolume(); // the master chain must run for any routed element
     ws.play();
   }, [seek]);
 
@@ -176,6 +185,17 @@ export default function Annotator() {
     }
   }, []);
 
+  // Open the auto-identify panel. The panel plays on its own audio; the main
+  // player must be stopped so the two never talk over each other.
+  const openIdentify = useCallback((segId?: string) => {
+    const s = stateRef.current;
+    const id = segId ?? s.selectedId;
+    if (!id) return;
+    wsRef.current?.pause();
+    playUntil.current = null;
+    setPanelSegId(id);
+  }, []);
+
   // --- keyboard -------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -207,6 +227,7 @@ export default function Annotator() {
         case ' ':
           e.preventDefault();
           playUntil.current = null;
+          resumeVolume();
           ws?.playPause();
           return;
         case 'Enter':
@@ -265,6 +286,7 @@ export default function Annotator() {
       const lower = e.key.toLowerCase();
       if (lower === 'j') { e.preventDefault(); step(1); return; }
       if (lower === 'k') { e.preventDefault(); step(-1); return; }
+      if (lower === 'i') { e.preventDefault(); openIdentify(); return; }
       if (lower === 's' && sel) { dispatch({ type: 'SPLIT', id: sel, time: currentTime }); return; }
       if (lower === 'm' && sel) { dispatch({ type: 'MERGE_NEXT', id: sel }); return; }
       if (lower === 'n') { e.preventDefault(); newSpeaker(); return; }
@@ -277,7 +299,7 @@ export default function Annotator() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentTime, rate, save, step, playSegment, newSpeaker]);
+  }, [currentTime, rate, save, step, playSegment, newSpeaker, openIdentify]);
 
   // --- speaker actions ------------------------------------------------------
   const [mergeFrom, setMergeFrom] = useState<string | null>(null);
@@ -294,6 +316,7 @@ export default function Annotator() {
   if (!recording) return <Empty description="找不到这条录音" />;
 
   const selected = state.selectedId ? find(state.segments, state.selectedId) : undefined;
+  const panelSegment = panelSegId ? find(state.segments, panelSegId) ?? null : null;
 
   return (
     <div style={{ padding: 16 }}>
@@ -313,6 +336,31 @@ export default function Annotator() {
         <Button size="small" onClick={() => setPxPerSec((p) => Math.max(10, p / 1.5))}>缩小</Button>
         <Button size="small" onClick={() => setPxPerSec((p) => Math.min(1200, p * 1.5))}>放大</Button>
         <span style={{ color: '#888', fontSize: 12 }}>{pxPerSec.toFixed(0)} px/s · {rate}×</span>
+        <Popover
+          trigger="click"
+          content={
+            <div style={{ width: 240 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <b>音量增益</b>
+                <span>{boostPct}%</span>
+              </div>
+              <Slider
+                min={BOOST_MIN}
+                max={BOOST_MAX}
+                step={50}
+                value={boostPct}
+                onChange={(v) => { setBoostVolume(v / 100); setBoostPct(v); }}
+              />
+              <div style={{ fontSize: 12, color: '#888' }}>
+                100% 以下降低，100%–500% 为数字放大（页面上限 100%，
+                超过即 WebAudio 增益 + 限幅，同视频站点做法；大声时可能
+                有轻微压缩感）
+              </div>
+            </div>
+          }
+        >
+          <Button size="small">音量 {boostPct}%</Button>
+        </Popover>
         <Button type="primary" size="small" loading={saving} onClick={save} disabled={!state.dirty}>
           保存
         </Button>
@@ -340,7 +388,13 @@ export default function Annotator() {
         segments={state.segments}
         selectedId={state.selectedId}
         currentTime={currentTime}
-        onReady={(ws) => { wsRef.current = ws; ws.setPlaybackRate(rate); }}
+        onReady={(ws) => {
+          wsRef.current = ws;
+          ws.setPlaybackRate(rate);
+          // Route the player's element through the master gain chain so the
+          // volume control (50%–500%) also governs the timeline player.
+          attachVolume(ws.getMediaElement());
+        }}
         onTime={handleTime}
         onPlayingChange={setPlaying}
         onSelect={(sid) => dispatch({ type: 'SELECT', id: sid })}
@@ -349,6 +403,7 @@ export default function Annotator() {
         onDragMove={(sid, delta) => dispatch({ type: 'MOVE', id: sid, delta, coalesce: true })}
         onDragEnd={() => dispatch({ type: 'SELECT', id: stateRef.current.selectedId })}
         onCreate={(label, start, end) => dispatch({ type: 'CREATE', label, start, end })}
+        onSegmentContextMenu={(segment, x, y) => setMenu({ segment, x, y })}
       />
 
       {/* The essentials stay on screen; `?` opens the full list. */}
@@ -409,6 +464,48 @@ export default function Annotator() {
           </div>
         </div>
       </Space>
+
+      {/* Right-click menu: identify, stable flag, delete. */}
+      {menu && menu.segment.id ? (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1090 }}
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
+          />
+          <div style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 1100 }}>
+            <Menu
+              selectable={false}
+              items={[
+                { key: 'identify', label: '自动识别相似度…' },
+                { key: 'stable', label: menu.segment.is_stable ? '取消稳定音频' : '设为稳定音频' },
+                { type: 'divider' as const },
+                { key: 'delete', label: '删除该段', danger: true },
+              ]}
+              onClick={({ key }) => {
+                const seg = menu.segment;
+                setMenu(null);
+                if (key === 'identify') openIdentify(seg.id);
+                if (key === 'stable') dispatch({ type: 'TOGGLE_STABLE', id: seg.id! });
+                if (key === 'delete') dispatch({ type: 'DELETE', id: seg.id! });
+              }}
+            />
+          </div>
+        </>
+      ) : null}
+
+      <SimilarityPanel
+        open={panelSegment !== null}
+        recordingId={id}
+        segment={panelSegment}
+        speakers={state.speakers}
+        onClose={() => setPanelSegId(null)}
+        onAssign={(labels) => {
+          if (panelSegment?.id) dispatch({ type: 'REASSIGN_MULTI', id: panelSegment.id, labels });
+          setPanelSegId(null);
+        }}
+        save={save}
+      />
 
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
 

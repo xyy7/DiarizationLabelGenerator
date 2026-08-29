@@ -44,6 +44,8 @@ export type Action =
   | { type: 'SPLIT'; id: string; time: number }
   | { type: 'MERGE_NEXT'; id: string }
   | { type: 'REASSIGN'; id: string; label: string }
+  | { type: 'REASSIGN_MULTI'; id: string; labels: string[] }
+  | { type: 'TOGGLE_STABLE'; id: string }
   | { type: 'SET_BOUNDARY'; id: string; edge: ops.Edge; time: number; coalesce?: boolean }
   | { type: 'NUDGE'; id: string; edge: ops.Edge; delta: number }
   | { type: 'MOVE'; id: string; delta: number; coalesce?: boolean }
@@ -137,6 +139,31 @@ export function reducer(state: EditState, action: Action): EditState {
     case 'REASSIGN': {
       const segments = ops.reassignSpeaker(state.segments, action.id, action.label);
       return commit(state, { segments });
+    }
+
+    case 'REASSIGN_MULTI': {
+      const segments = ops.reassignToSpeakers(state.segments, action.id, action.labels);
+      if (segments === state.segments) return state;
+      const names = action.labels.map(
+        (l) => state.speakers.find((s) => s.label === l)?.name ?? l,
+      );
+      return commit(state, { segments }, {
+        notice: names.length === 1
+          ? `已改判给 ${names[0]}`
+          : `已改判给 ${names.join('、')}（重叠标注：同时属于多人的整段时间）`,
+      });
+    }
+
+    case 'TOGGLE_STABLE': {
+      const segments = ops.toggleStable(state.segments, action.id);
+      if (segments === state.segments) return state;
+      const nowStable =
+        segments.find((s) => s.id === action.id)?.is_stable ?? false;
+      return commit(state, { segments }, {
+        notice: nowStable
+          ? '已设为稳定音频（作为该说话人的参考声纹）'
+          : '已取消稳定音频',
+      });
     }
 
     case 'SET_BOUNDARY': {

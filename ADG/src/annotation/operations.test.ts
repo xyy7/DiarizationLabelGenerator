@@ -7,7 +7,7 @@ const DURATION = 30;
 const PALETTE = ['#a', '#b', '#c'] as const;
 
 function seg(id: string, start: number, end: number, label = '0', text = ''): Segment {
-  return { id, speaker_label: label, start_sec: start, end_sec: end, text };
+  return { id, speaker_label: label, start_sec: start, end_sec: end, text, is_stable: false };
 }
 
 function speaker(label: string): Speaker {
@@ -209,5 +209,72 @@ describe('speech duration', () => {
     const total = ops.speechDuration([seg('a', 0, 10, '0'), seg('b', 5, 15, '1')]);
 
     expect(total).toBe(15);
+  });
+});
+
+describe('stable audio', () => {
+  it('toggles the flag', () => {
+    const segments = ops.toggleStable([seg('a', 1, 5)], 'a');
+
+    expect(segments[0].is_stable).toBe(true);
+    expect(ops.toggleStable(segments, 'a')[0].is_stable).toBe(false);
+  });
+
+  it('leaves other segments alone', () => {
+    const segments = ops.toggleStable([seg('a', 1, 5), seg('b', 6, 9)], 'a');
+
+    expect(segments[1].is_stable).toBe(false);
+  });
+});
+
+describe('reassign to speakers', () => {
+  it('one label is a plain reassign', () => {
+    const segments = ops.reassignToSpeakers([seg('a', 1, 5, '0')], 'a', ['1']);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ id: 'a', speaker_label: '1' });
+  });
+
+  it('keeps the original row when its speaker is checked', () => {
+    const original = { ...seg('a', 1, 5, '0'), is_stable: true };
+    const segments = ops.reassignToSpeakers([original], 'a', ['1', '0']);
+
+    expect(segments).toHaveLength(2);
+    const own = segments.find((s) => s.speaker_label === '0');
+    expect(own?.id).toBe('a');
+    expect(own?.is_stable).toBe(true);
+  });
+
+  it('copies carry fresh ids and never inherit stable', () => {
+    const original = { ...seg('a', 1, 5, '0'), is_stable: true };
+    const segments = ops.reassignToSpeakers([original], 'a', ['1', '2']);
+
+    expect(segments).toHaveLength(2);
+    // The original id disappears with the original label; both copies are new.
+    expect(segments.every((s) => s.id !== 'a')).toBe(true);
+    for (const s of segments) {
+      expect(s).toMatchObject({ start_sec: 1, end_sec: 5 });
+      expect(s.is_stable).toBe(false);
+    }
+  });
+
+  it('deduplicates the checked labels', () => {
+    const segments = ops.reassignToSpeakers([seg('a', 1, 5, '0')], 'a', ['1', '1', '0']);
+
+    expect(segments).toHaveLength(2);
+  });
+
+  it('empty or missing target is a no-op', () => {
+    const original = [seg('a', 1, 5, '0')];
+
+    expect(ops.reassignToSpeakers(original, 'a', [])).toBe(original);
+    expect(ops.reassignToSpeakers(original, 'ghost', ['1'])).toBe(original);
+  });
+
+  it('does not create same-speaker copies', () => {
+    const segments = ops.reassignToSpeakers([seg('a', 1, 5, '0')], 'a', ['0']);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0].id).toBe('a');
   });
 });

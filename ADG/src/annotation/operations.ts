@@ -184,9 +184,59 @@ export function createSegment(
   if (end - start < MIN_DURATION) return { segments, newId: null };
   const newId = tempId();
   return {
-    segments: [...segments, { id: newId, speaker_label: label, start_sec: start, end_sec: end, text: '' }],
+    segments: [
+      ...segments,
+      {
+        id: newId, speaker_label: label, start_sec: start, end_sec: end, text: '', is_stable: false,
+      },
+    ],
     newId,
   };
+}
+
+/** Flag (or unflag) a segment as this speaker's reference audio. */
+export function toggleStable(segments: Segment[], id: string): Segment[] {
+  return segments.map((s) => (s.id === id ? { ...s, is_stable: !s.is_stable } : s));
+}
+
+/**
+ * Replace a segment's speaker assignment with `labels` (checked speakers).
+ *
+ * One label is a plain reassign (kept by N=1 for parity with reassignSpeaker).
+ * Several labels mark OVERLAPPING speech: the window belongs to every checked
+ * speaker at once, which this system records as one segment per speaker
+ * sharing the same time range. The original row keeps its id when its speaker
+ * is among the checked set, so a boundary later moved on it stays one gesture;
+ * the added speakers get fresh temp ids.
+ *
+ * Empty labels is a no-op: checking nothing cannot mean anything useful.
+ */
+export function reassignToSpeakers(
+  segments: Segment[],
+  id: string,
+  labels: string[],
+): Segment[] {
+  const target = find(segments, id);
+  if (!target || labels.length === 0) return segments;
+
+  const unique = [...new Set(labels)];
+  if (unique.length === 1) return reassignSpeaker(segments, id, unique[0]);
+
+  const ownLabel = target.speaker_label;
+  const replaced = unique.map((label) =>
+    label === ownLabel
+      ? { ...target } // the original row stays in place: id, stable flag, text
+      : {
+          ...target,
+          id: tempId(),
+          speaker_label: label,
+          // A copy is not the original speaker's reference audio; flagging it
+          // would silently extend that speaker's stable set.
+          is_stable: false,
+        },
+  );
+
+  return segments.flatMap((s) => (s.id === id ? replaced : [s]));
 }
 
 /**

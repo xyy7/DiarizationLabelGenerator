@@ -8,3 +8,8 @@ build/
 
 # 浏览器验证脚本产出的截图：随时可用 scripts/shot.mjs 重新生成
 scripts/shots/
+
+# `tsc -b` 的增量构建产物（composite 项目会在源码旁落盘），本地检查用，不入库
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

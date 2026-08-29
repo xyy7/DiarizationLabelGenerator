@@ -35,6 +35,8 @@ interface Props {
   onDragMove: (id: string, delta: number) => void;
   onDragEnd: () => void;
   onCreate: (label: string, start: number, end: number) => void;
+  /** Right-click on a segment: open the per-segment menu at (x, y). */
+  onSegmentContextMenu: (segment: Segment, x: number, y: number) => void;
 }
 
 function fmt(t: number): string {
@@ -53,7 +55,7 @@ export default function Timeline(props: Props) {
   const {
     duration, pxPerSec, audioUrl, peaks, speakers, segments, selectedId,
     currentTime, onReady, onTime, onPlayingChange, onSelect,
-    onDragBoundary, onDragMove, onDragEnd, onCreate,
+    onDragBoundary, onDragMove, onDragEnd, onCreate, onSegmentContextMenu,
   } = props;
 
   const width = Math.max(1, duration * pxPerSec);
@@ -177,12 +179,17 @@ export default function Timeline(props: Props) {
               return (
                 <div
                   key={s.id}
-                  title={`${fmt(s.start_sec)} – ${fmt(s.end_sec)}`}
+                  title={`${fmt(s.start_sec)} – ${fmt(s.end_sec)}${s.is_stable ? ' ★稳定音频' : ''}`}
                   onMouseDown={(e) => {
                     e.stopPropagation();
                     if (!s.id) return;
                     onSelect(s.id);
                     drag.current = { kind: 'move', id: s.id, lastTime: timeAt(e.clientX) };
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (s.id) onSegmentContextMenu(s, e.clientX, e.clientY);
                   }}
                   style={{
                     position: 'absolute', left, width: w, top: 5,
@@ -196,6 +203,17 @@ export default function Timeline(props: Props) {
                   }}
                 >
                   {w > 46 ? s.text || '' : ''}
+                  {s.is_stable ? (
+                    <span
+                      title="稳定音频（该说话人的参考声纹）"
+                      style={{
+                        position: 'absolute', right: 4, top: 0,
+                        fontSize: 11, color: '#fff', textShadow: '0 0 2px #000',
+                      }}
+                    >
+                      ★
+                    </span>
+                  ) : null}
                   <div
                     onMouseDown={(e) => {
                       e.stopPropagation();

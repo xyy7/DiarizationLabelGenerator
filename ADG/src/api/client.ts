@@ -7,7 +7,7 @@
  */
 
 import type {
-  Annotation, Job, Recording, SaveResult, Segment, Speaker, User,
+  Annotation, Job, Recording, SaveResult, Segment, SimilarityResult, Speaker, User,
 } from '../types';
 
 const BASE = '/api';
@@ -151,6 +151,18 @@ export const api = {
           ...(sid && !sid.startsWith('tmp-') ? { id: sid } : {}),
         })),
       }),
+    });
+  },
+
+  /**
+   * Ranked similarity of one audio window against the stable segments.
+   * Located by time on purpose: the window may never have reached the server.
+   */
+  similarity(id: string, start_sec: number, end_sec: number) {
+    return request<SimilarityResult>(`/recordings/${id}/similarity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_sec, end_sec }),
     });
   },
 

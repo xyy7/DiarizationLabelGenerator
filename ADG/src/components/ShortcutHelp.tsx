@@ -38,6 +38,7 @@ export const GROUPS: { title: string; items: Shortcut[] }[] = [
     title: '修改',
     items: [
       { keys: ['1', '…', '9'], what: '把选中片段改判给第 N 位说话人', needsSelection: true },
+      { keys: ['I'], what: '自动识别相似度（右键片段亦可）', needsSelection: true },
       { keys: ['N'], what: '新建说话人（选中时把这片段拆给他）' },
       { keys: ['S'], what: '在播放头处拆分', needsSelection: true },
       { keys: ['M'], what: '与同一说话人的下一段合并', needsSelection: true },
