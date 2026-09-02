@@ -199,7 +199,8 @@ docker compose up -d worker
 
 完整链路：意图 [`intent/speaker-similarity.md`](intent/speaker-similarity.md) →
 方案 [`spec/speaker-similarity.md`](spec/speaker-similarity.md) →
-任务 [`tasks/`](../tasks/)。**已实现、已部署本机、E2E 通过**。
+任务记录 `tasks/2026-08-29/`（本地文件，与 tests/ 一样**不入 git**，见 `.gitignore`）。
+**已实现、已部署本机、E2E 通过**。
 
 ### 做了什么
 
@@ -219,17 +220,26 @@ docker compose up -d worker
 ### 验证到什么程度
 
 ```
-服务端   119 passed   docker compose --profile test run --rm test pytest -q
-前端     58 passed    cd ADG && npm test；tsc 零错误；vite build 通过
+服务端   126 passed   docker compose --profile test run --rm test pytest -q
+前端     59 passed    cd ADG && npm test；tsc 零错误；vite build 通过
 端到端   python scripts/e2e_similarity.py —— 相似度 98.3% 排名正确、
-        缓存 730ms→6ms、重叠双行 RTTM ✓；verify /healthz 在线
+        缓存命中（首次计算后即毫秒级）、重叠双行 RTTM ✓；verify /healthz 在线
 手动     CDP 实测：短段(J 走查)停在段尾属设计行为；播放链路事件正常
 ```
+
+### 三期：修复轮（2026-08-31）
+
+一次全仓扫描修复后计数：服务端 **126**（119 + 7 个新回归测试：rttm nan/inf/零时长四项、
+domain nan/亚毫秒两项、verify 缓存容差一项），前端 **59**（新增"改判为同说话人无变化"用例）。
+服务端测试用 `--build` 重建 test 镜像后容器内全量；直接宿主 pytest 为 58 passed（verify 系 5 项需容器）。
 
 ### 遗留（未关闭）
 
 - [ ] **用户环境“播放无声音”仍在调查**（应用链路已排除，方向：系统输出设备/
       音量合成器——见 spec §11 与本轮会话记录；待用户做 ①直接开 audio URL ②合成器滑块 ③其他软件对照）。
+      2026-08-31 已修复一个候选根因：boost>100% 时**点波形开始播放**路径从不恢复
+      WebAudio 上下文（suspended 上下文内路由的元素播放无声），现有恢复只发生在空格/J/K/Enter
+      ——波形 click/seek 现在也会恢复。建议用户以 120% 音量点波形复测。
 - [ ] **ModelScope 当日后端故障**，models 卷 eres2net 权重为本机副本注入；
       MS 恢复后重跑 `docker compose --profile setup run --rm seed-models` 验证脚本路径。
 - [ ] 结论：`db+api` 最小部署不受影响；相似度依赖 verify，未启动时前端 503 文案提示。

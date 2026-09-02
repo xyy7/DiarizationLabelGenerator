@@ -88,5 +88,5 @@
 
 ## 四、下游文档
 
-- 技术方案（spec）：下一步
-- 任务拆分（plan）：待产出
+- 技术方案（spec）：已产出 → `docs/spec/speaker-similarity.md`
+- 任务拆分/记录：已完成 → `tasks/`（日期分文件夹，不入 git）；验收见 `docs/HANDOFF.md` 第八节

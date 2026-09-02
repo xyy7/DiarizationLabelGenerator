@@ -20,6 +20,11 @@ models/
 backups/
 /data/
 
+# 任务记录与手工测试样例（全局规范：均不入版本控制）。
+# 同样必须根锚定：写 tasks/、tests/ 会连 server/tests/ 一起排除。
+/tasks/
+/tests/
+
 # 环境
 .env
 .venv/

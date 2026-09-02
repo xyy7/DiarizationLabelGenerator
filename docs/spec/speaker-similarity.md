@@ -1,7 +1,7 @@
 # 说话人稳定音频与声纹相似度改判 技术方案
 
 **日期**：2026-08-29
-**状态**：方案已设计，尚未进入任务拆分
+**状态**：已实施完成（2026-08-29 实现、08-31 修复轮收尾；实现与验收见 `docs/HANDOFF.md` 第八节，任务记录在 `tasks/2026-08-29/`，不入 git）
 **上游意图**：[docs/intent/speaker-similarity.md](../intent/speaker-similarity.md)
 **关联**：[docs/intent/adg-refactor.md](../intent/adg-refactor.md)
 

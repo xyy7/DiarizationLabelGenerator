@@ -18,8 +18,10 @@ docker compose up -d db api     # 起服务；前端由 api 直接托管
 | `server/` | FastAPI + Postgres：音频归档、预标注任务队列（worker）、标注存取、RTTM 导出；`app/verify/` 为说话人相似度服务 |
 | `ADG/` | 前端标注应用（Vite + React + TS）：列表认领 + 快捷键为主的纠错交互 |
 | `docker-compose.yml` | db / api / worker / verify / seed-models / test（GPU 见 `docker-compose.gpu.yml`） |
-| `docs/` | 意图书（`intent/`）、技术方案（`spec/`）、交接文档（`HANDOFF.md`） |
+| `docs/` | 意图书（`intent/`）、技术方案（`spec/`）、交接文档（`HANDOFF.md`），**入 git** |
 | `diarizen-config/` | DiariZen 纯 CPU 环境配置与推理脚本，以及权重下载脚本（worker/verify 镜像用） |
+| `tasks/` | 任务记录（按 `YYYY-MM-DD/` 分文件夹），**不入 git**（`.gitignore`） |
+| `tests/` | 手工测试样例数据（客户音频、中间产物），**不入 git**（`.gitignore`）；自动化测试套件在 `server/tests/`（入 git） |
 
 `ADG/` 已并入本仓库：前端与 server 同一 git 仓库演进（此前 `ADG/` 是独立 git
 仓库，其 13 个提交经前缀重放合并保留，原始哈希备份在 `backups/adg-history-20260830.bundle`；

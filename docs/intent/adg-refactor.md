@@ -5,7 +5,7 @@
 **产生方式**：`interview-me` 访谈 + 全项目代码扫描
 
 > 本文只记录**要什么、为什么**，不记录**怎么做**。
-> 技术方案（spec）与任务拆分（plan）是下游文档，另行产出。
+> 技术方案（spec）与任务拆分/记录（tasks/）是下游文档，另行产出。
 
 ---
 
@@ -174,7 +174,9 @@ const line = `SPEAKER ${fileName} ${channelIndex + 1} ${startTime} ${duration} <
 
 ---
 
-## 六、下游文档
+## 六、下游文档（2026-09-03 更新）
 
-- 技术方案（spec）：待产出
-- 任务拆分（plan）：待产出
+- 技术方案（spec）：重构本身无独立 spec，直接按本意图实施；相似度功能详情见
+  `docs/spec/speaker-similarity.md`
+- 任务拆分/记录：`tasks/`（按日期分文件夹，不入 git）；实施与验收见
+  `docs/HANDOFF.md`
