@@ -94,7 +94,8 @@ def similarity(req: SimilarityRequest):
             )
         try:
             qvec, _ = svc.ensure_embedding(
-                db, recording.id, str(wav), req.query.start_sec, req.query.end_sec, embed
+                db, recording.id, str(wav), req.query.start_sec, req.query.end_sec,
+                embed, commit=False,
             )
         except EngineError as exc:
             raise _or_engine_error(exc) from None
@@ -105,7 +106,8 @@ def similarity(req: SimilarityRequest):
         scored_by_label: dict[str, list[svc.ClipScore]] = {}
         for seg in stable:
             vec, _ = svc.ensure_embedding(
-                db, recording.id, str(wav), seg.start_sec, seg.end_sec, embed
+                db, recording.id, str(wav), seg.start_sec, seg.end_sec,
+                embed, commit=False,
             )
             clip = svc.ClipScore(
                 segment_id=seg.id,
@@ -115,6 +117,10 @@ def similarity(req: SimilarityRequest):
                 short=svc.is_short(seg.start_sec, seg.end_sec),
             )
             scored_by_label.setdefault(seg.speaker_label, []).append(clip)
+
+        # One transaction for the query + (up to) every stable segment instead
+        # of one commit per segment.
+        db.commit()
 
     ranked, unranked = svc.rank_speakers(scored_by_label, speakers)
 
@@ -184,6 +190,9 @@ def precompute(req: PrecomputeRequest):
                 computed += 1
             else:
                 skipped += 1
+
+        # One transaction for (up to) every segment, not one per segment.
+        db.commit()
 
     return {"computed": computed, "skipped": skipped}
 

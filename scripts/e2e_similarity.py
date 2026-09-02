@@ -14,7 +14,9 @@ displays the two overlapping lines.
 from __future__ import annotations
 
 import math
+import shutil
 import sys
+import tempfile
 import wave
 from pathlib import Path
 
@@ -24,7 +26,17 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
 HEADERS = {"X-User-Name": "e2e-check"}
 
 SRC = Path(__file__).resolve().parent.parent / "DiariZen/example/EN2002a_30s.wav"
-TMP = Path(__file__).resolve().parent / "e2e_tmp_trimmed.wav"
+
+
+def _tmp_wav() -> Path:
+    """A scratch file inside the system temp dir, removed with its parent."""
+    d = Path(tempfile.mkdtemp(prefix="e2e_similarity_"))
+    # Registered so the finally in main() always cleans the directory.
+    _TMP_DIRS.append(d)
+    return d / "e2e_tmp_trimmed.wav"
+
+
+_TMP_DIRS: list[Path] = []
 
 
 def trim(src: Path, dst: Path, drop_first: float = 1.0) -> None:
@@ -38,8 +50,17 @@ def trim(src: Path, dst: Path, drop_first: float = 1.0) -> None:
 
 
 def main() -> int:
-    trim(SRC, TMP)
-    with TMP.open("rb") as fh:
+    tmp_wav = _tmp_wav()
+    try:
+        trim(SRC, tmp_wav)
+        return _run(tmp_wav)
+    finally:
+        for d in _TMP_DIRS:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def _run(tmp_wav: Path) -> int:
+    with tmp_wav.open("rb") as fh:
         resp = requests.post(
             f"{BASE}/api/recordings",
             files={"file": ("e2e_trimmed.wav", fh, "audio/wav")},

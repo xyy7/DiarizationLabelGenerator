@@ -132,12 +132,30 @@ def ingest(
         try:
             db.commit()
         except IntegrityError:
-            # Lost a race with a concurrent upload of the same bytes.
+            # Either lost a race with a concurrent upload of the same bytes,
+            # or one of the same stem beat us to the session name.
             db.rollback()
             existing = db.execute(
                 select(Recording.id).where(Recording.sha256 == sha256)
-            ).scalar_one()
-            raise DuplicateUpload(existing) from None
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise DuplicateUpload(existing) from None
+            # Not the hash race: claim another name and retry. The window is
+            # tiny, so a few attempts is plenty.
+            last: IntegrityError | None = None
+            for _ in range(3):
+                recording.session_name = _unique_session_name(
+                    db, session_name or Path(original_name).stem
+                )
+                db.add(recording)
+                try:
+                    db.commit()
+                    break
+                except IntegrityError as exc:
+                    last = exc
+                    db.rollback()
+            else:
+                raise last
 
         db.refresh(recording)
         created_dir = None  # committed: the files now belong to a real row

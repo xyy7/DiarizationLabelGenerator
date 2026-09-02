@@ -90,17 +90,26 @@ def embed(wav_path: Path, start_sec: float, end_sec: float) -> np.ndarray:
     import soundfile as sf
     import torch
 
-    data, sr = sf.read(str(wav_path), dtype="float32")
-    if sr != SAMPLE_RATE:
-        raise EngineError(f"{wav_path}: expected {SAMPLE_RATE} Hz, got {sr}")
+    # Only the window is read, never the whole file: /similarity loops over
+    # every stable segment, and re-reading a 20-minute wav once per segment
+    # turns one click into minutes of sequential I/O.
+    with sf.SoundFile(str(wav_path)) as f:
+        sr = f.samplerate
+        if sr != SAMPLE_RATE:
+            raise EngineError(f"{wav_path}: expected {SAMPLE_RATE} Hz, got {sr}")
 
-    s = max(0, int(start_sec * sr))
-    e = min(len(data), int(end_sec * sr))
-    if e - s < int(sr * 0.25):  # 250 ms of actual audio is the floor
-        raise EngineError(f"window {start_sec}-{end_sec} yields less than 250 ms")
+        s = max(0, int(start_sec * sr))
+        e = min(f.frames, int(end_sec * sr))
+        if e - s < int(sr * 0.25):  # 250 ms of actual audio is the floor
+            raise EngineError(
+                f"window {start_sec}-{end_sec} yields less than 250 ms"
+            )
+
+        f.seek(s)
+        data = f.read(e - s, dtype="float32")  # [N] mono
 
     with torch.no_grad():
-        out = get_model().model.forward(data[s:e])  # [1, T] float32 -> [1, K]
+        out = get_model().model.forward(data)  # [1, T] float32 -> [1, K]
 
     vec = out.detach().cpu().numpy()[0]
     if vec.shape != (EMBEDDING_DIM,):

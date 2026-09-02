@@ -1,7 +1,7 @@
 # Single-machine deployment for the diarization annotation server.
 #
 #   docker compose up -d db api          # annotate + export, no inference
-#   docker compose run --rm seed-models  # once, to fetch the weights (~292 MB)
+#   docker compose --profile setup run --rm seed-models  # once: fetch the weights
 #   docker compose up -d worker          # start consuming diarization jobs
 #
 # Build context is the repository root so the worker image can copy DiariZen/.
@@ -107,7 +107,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # One-shot: docker compose run --rm seed-models
+  # One-shot: docker compose --profile setup run --rm seed-models
   # Downloads the CC BY-NC 4.0 weights (DiariZen ~292 MB + eres2net ~221 MB)
   # into the models volume. Built from `verify` because the eres2net weights
   # are fetched with the modelscope SDK.
@@ -120,7 +120,7 @@ services:
       MODELS_DIR: /models
       # huggingface.co is not directly reachable from this network. Inside a
       # container the host's proxy is host.docker.internal, never 127.0.0.1:
-      #   HTTPS_PROXY=http://host.docker.internal:7890 docker compose run --rm seed-models
+      #   HTTPS_PROXY=http://host.docker.internal:7890 docker compose --profile setup run --rm seed-models
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
     extra_hosts:

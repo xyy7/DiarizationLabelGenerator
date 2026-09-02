@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Sequence
 
 from sqlalchemy import delete, insert, select, update
@@ -91,6 +92,7 @@ def save_annotation(
         .values(
             annotation_version=expected_version + 1,
             last_edited_by=edited_by,
+            updated_at=datetime.now(timezone.utc),
         )
     )
     if result.rowcount == 0:

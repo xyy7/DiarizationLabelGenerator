@@ -61,7 +61,12 @@ def healthz():
 
 # The built frontend, if it has been mounted. Registered last so it cannot
 # shadow an API route.
-if STATIC_DIR.is_dir():
+#
+# Gate on the assets directory, not the mount point: compose binds
+# ./ADG/dist which Docker silently creates as an empty directory when the
+# build has not run yet -- an empty /srv/static would pass .is_dir() and then
+# crash uvicorn at import time with "directory does not exist".
+if (STATIC_DIR / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)

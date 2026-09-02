@@ -28,6 +28,7 @@ Subtitles will get their own format in phase 2.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -77,10 +78,19 @@ def serialize(uri: str, segments: Sequence[RttmSegment]) -> str:
     lines = []
     for seg in segments:
         _reject_whitespace(seg.speaker, "speaker")
+        if not math.isfinite(seg.start) or not math.isfinite(seg.duration):
+            raise RttmError(
+                f"non-finite start or duration: {seg.start} {seg.duration}"
+            )
         if seg.start < 0:
             raise RttmError(f"negative start: {seg.start}")
         if seg.duration <= 0:
             raise RttmError(f"non-positive duration: {seg.duration}")
+        if round(seg.duration, 3) == 0:
+            # %.3f below renders "0.000", which our own parse rejects.
+            raise RttmError(
+                f"duration rounds to zero milliseconds: {seg.duration}"
+            )
         lines.append(
             f"{_TYPE} {uri} {_CHANNEL} {seg.start:.3f} {seg.duration:.3f} "
             f"{NA} {NA} {seg.speaker} {NA} {NA}\n"
@@ -140,6 +150,13 @@ def parse(text: str) -> tuple[str, list[RttmSegment]]:
         except ValueError as exc:
             raise RttmError(f"line {lineno}: bad timestamp: {line!r}") from exc
 
+        if not math.isfinite(start) or not math.isfinite(duration):
+            # NaN compares False against everything, so it slips past both
+            # checks below and (via max/min quirk) clamps into a whole-file
+            # segment. Never let a generator's NaN silent in.
+            raise RttmError(
+                f"line {lineno}: timestamp must be finite: {line!r}"
+            )
         if start < 0:
             raise RttmError(f"line {lineno}: negative start {start}")
         if duration <= 0:

@@ -222,6 +222,17 @@ def similarity(
         raise HTTPException(
             422, {"code": "invalid", "message": "end must be greater than start"}
         )
+    if body.end_sec - body.start_sec < 0.25:
+        # The engine refuses windows with less than 250 ms of actual audio;
+        # without this the user gets a cryptic 503 "service unreachable".
+        raise HTTPException(
+            422,
+            {
+                "code": "invalid",
+                "message": "the window is shorter than 250 ms -- too little "
+                "audio to identify a speaker",
+            },
+        )
     if body.start_sec < 0 or body.end_sec > recording.duration_sec:
         raise HTTPException(
             422,

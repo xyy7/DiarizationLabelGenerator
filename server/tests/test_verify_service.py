@@ -175,3 +175,32 @@ def test_cache_round_trip_and_stale_model_recompute(db, recording_id):
     db.commit()
     ensure_embedding(db, recording_id, "/data/audio.wav", 1.0, 2.0, embed_fn)
     assert len(calls) == 3
+
+
+def test_cache_hits_on_submillisecond_differences(db, recording_id):
+    """Float round-trips need not be bit-identical for the cache to hit.
+
+    A one-in-the-last-digit difference (RTTM %.3f rounding, JSON round-trip,
+    client arithmetic) must not recompute the vector.
+    """
+    calls = []
+
+    def embed_fn(wav_path, start, end):
+        calls.append((wav_path, start, end))
+        return np.arange(192, dtype=np.float64)
+
+    ensure_embedding(db, recording_id, "/data/audio.wav", 1.0, 2.0, embed_fn)
+    assert len(calls) == 1
+
+    _, computed = ensure_embedding(
+        db, recording_id, "/data/audio.wav", 1.0005, 2.0005, embed_fn
+    )
+    assert computed is False
+    assert len(calls) == 1
+
+    # A real difference (8 ms) is still a miss.
+    _, computed = ensure_embedding(
+        db, recording_id, "/data/audio.wav", 1.008, 2.0, embed_fn
+    )
+    assert computed is True
+    assert len(calls) == 2

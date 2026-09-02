@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 
-from app.annotations import save_annotation
+from app.annotations import VersionConflict, save_annotation
 from app.config import settings
 from app.db import SessionLocal, init_schema
 from app.domain import rttm_to_annotation
@@ -99,13 +99,29 @@ def run_job(db, job: Job) -> None:
 
     # Same write path a human save takes: same validation, same clamping, same
     # version bump. Pre-labels get no shortcuts.
-    version, adjustments = save_annotation(
-        db,
-        recording,
-        expected_version=recording.annotation_version,
-        speakers=speakers,
-        segments=segments,
-    )
+    try:
+        version, adjustments = save_annotation(
+            db,
+            recording,
+            expected_version=recording.annotation_version,
+            speakers=speakers,
+            segments=segments,
+        )
+    except VersionConflict as exc:
+        # The version lock only saw the version from when inference started.
+        # If a human saved or imported while inference was running, their
+        # annotation supersedes ours -- overwriting it would discard real
+        # corrections, and requeueing would just run inference again and
+        # lose again. The stale result is dropped instead. (run_job raises
+        # nothing, so main() marks the job succeeded without touching the
+        # annotation.)
+        log.warning(
+            "%s: annotation already at version %d; discarding diarization "
+            "output rather than overwriting concurrent edits",
+            recording.session_name,
+            exc.current_version,
+        )
+        return
 
     log.info(
         "%s: %d speakers, %d segments in %.0fs (%.2fx realtime) -> version %d%s",

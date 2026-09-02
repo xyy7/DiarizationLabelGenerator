@@ -8,6 +8,7 @@ that would need infrastructure to exercise. Everything here runs under a bare
 
 from __future__ import annotations
 
+import math
 import uuid
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -20,6 +21,10 @@ PALETTE = (
     "#1890ff", "#52c41a", "#faad14", "#f5222d", "#722ed1",
     "#13c2c2", "#eb2f96", "#fa8c16", "#a0d911", "#2f54eb",
 )
+
+# Anything shorter than this cannot survive RTTM's %.3f rendering -- a
+# 0.000 duration is exactly what the parser refuses on the way back in.
+MIN_SEGMENT_SEC = 0.001
 
 
 class AnnotationError(ValueError):
@@ -91,6 +96,14 @@ def clamp_segments(
 
     for index, seg in enumerate(segments):
         start, end = seg.start_sec, seg.end_sec
+        if not math.isfinite(start) or not math.isfinite(end):
+            # NaN compares False against everything: without this check a
+            # (nan, nan) pair sails past end <= start and clamps (via
+            # max/min's compare quirks) into a whole-file segment.
+            raise AnnotationError(
+                f"segment {index}: start and end must be finite, "
+                f"got ({start}, {end})"
+            )
         if end <= start:
             raise AnnotationError(
                 f"segment {index}: end ({end}) must be greater than start ({start})"
@@ -101,6 +114,13 @@ def clamp_segments(
 
         if new_end <= new_start:
             adjustments.append(Adjustment(index, "outside audio", (start, end), None))
+            continue
+
+        if new_end - new_start < MIN_SEGMENT_SEC:
+            # Would export as duration 0.000 -- a file our own parser refuses.
+            adjustments.append(
+                Adjustment(index, "shorter than 1 ms", (start, end), None)
+            )
             continue
 
         if (new_start, new_end) != (start, end):

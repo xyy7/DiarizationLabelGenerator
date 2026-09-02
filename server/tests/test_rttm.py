@@ -214,6 +214,31 @@ def test_serialize_rejects_non_positive_duration():
         serialize("rec", [RttmSegment("rec", 1.0, 0.0, "spk1")])
 
 
+def test_parse_rejects_nan_timestamp():
+    # NaN compares False against both checks below; without the finite guard
+    # it clamps into a whole-file segment.
+    with pytest.raises(RttmError, match="finite"):
+        parse("SPEAKER rec 1 nan 1.000 <NA> <NA> spk1 <NA> <NA>\n")
+
+
+def test_parse_rejects_inf_timestamp():
+    with pytest.raises(RttmError, match="finite"):
+        parse("SPEAKER rec 1 1.000 inf <NA> <NA> spk1 <NA> <NA>\n")
+
+
+def test_serialize_rejects_non_finite():
+    with pytest.raises(RttmError, match="non-finite"):
+        serialize("rec", [RttmSegment("rec", float("nan"), 1.0, "spk1")])
+    with pytest.raises(RttmError, match="non-finite"):
+        serialize("rec", [RttmSegment("rec", 1.0, float("inf"), "spk1")])
+
+
+def test_serialize_rejects_duration_that_rounds_to_zero():
+    # %.3f would render "0.000", a duration our own parser refuses.
+    with pytest.raises(RttmError, match="zero milliseconds"):
+        serialize("rec", [RttmSegment("rec", 1.0, 0.0002, "spk1")])
+
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------

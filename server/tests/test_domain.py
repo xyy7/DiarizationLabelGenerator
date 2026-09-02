@@ -76,6 +76,26 @@ def test_negative_start_is_clamped():
     assert adjustments[0].after == (0.0, 2.0)
 
 
+def test_nan_segment_is_rejected():
+    # NaN would clamp into a whole-file segment via max/min compare quirks;
+    # the rules decide correctness, so they refuse it loudly.
+    with pytest.raises(AnnotationError, match="finite"):
+        clamp_segments([seg(float("nan"), 2.0)], DURATION)
+    with pytest.raises(AnnotationError, match="finite"):
+        clamp_segments([seg(1.0, float("inf"))], DURATION)
+
+
+def test_submillisecond_segment_is_dropped_loudly():
+    # RTTM prints %.3f: a 0.0002 s segment would export as duration "0.000",
+    # which the parser refuses on the way back in (and DER tools misread).
+    kept, adjustments = clamp_segments([seg(1.0, 1.0002)], DURATION)
+
+    assert kept == []
+    assert len(adjustments) == 1
+    assert adjustments[0].reason == "shorter than 1 ms"
+    assert adjustments[0].after is None
+
+
 def test_segment_entirely_past_the_end_is_dropped_loudly():
     kept, adjustments = clamp_segments([seg(1.0, 2.0), seg(40.0, 41.0)], DURATION)
 

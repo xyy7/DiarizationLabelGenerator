@@ -47,7 +47,14 @@ class VerifyClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise VerifyUnavailable(f"verify service unreachable: {exc}") from exc
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            # 200 but not JSON (or not the shape) -- nonsense is as good as
+            # down, and must not surface as an API 500.
+            raise VerifyUnavailable(
+                "verify service answered with an unexpected body"
+            ) from exc
 
     def precompute(self, recording_id: uuid.UUID) -> None:
         """Warm the stable-segment embedding cache. Fire-and-forget by design:

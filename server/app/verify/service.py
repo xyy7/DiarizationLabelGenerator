@@ -17,10 +17,16 @@ from datetime import datetime, timezone
 from typing import Callable, Sequence
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models import SegmentEmbedding
+
+# Two windows are "the same" if their edges agree within 1 ms. RTTM stores
+# %.3f, Python floats carry far more digits than a JSON round-trip promises,
+# and a one-in-the-last-digit difference must not invalidate a cached 192-dim
+# vector (the vector is integral over its window; 1 ms moves nothing).
+CACHE_EPS = 1e-3
 
 # Sole identity of "the embedding produced by this model + feature extraction
 # code". Bump on ANY change that could move a vector (weights, fbank config,
@@ -82,14 +88,20 @@ def is_short(start: float, end: float) -> bool:
 # ---------------------------------------------------------------------------
 
 def load_cached(db, recording_id: uuid.UUID, start: float, end: float):
-    """Return the cached vector for exactly this window, or None."""
+    """Return the cached vector for this window (within CACHE_EPS), or None."""
+    eps = CACHE_EPS
     row = db.execute(
-        select(SegmentEmbedding).where(
+        select(SegmentEmbedding)
+        .where(
             SegmentEmbedding.recording_id == recording_id,
-            SegmentEmbedding.start_sec == start,
-            SegmentEmbedding.end_sec == end,
+            func.abs(SegmentEmbedding.start_sec - start) <= eps,
+            func.abs(SegmentEmbedding.end_sec - end) <= eps,
         )
-    ).scalar_one_or_none()
+        .order_by(
+            func.abs(SegmentEmbedding.start_sec - start)
+            + func.abs(SegmentEmbedding.end_sec - end)
+        )
+    ).scalars().first()
     if row is None or row.model_id != EMBEDDING_MODEL_ID:
         return None
     vec = np.asarray(row.embedding, dtype=np.float64)
@@ -98,8 +110,19 @@ def load_cached(db, recording_id: uuid.UUID, start: float, end: float):
     return vec
 
 
-def store_embedding(db, recording_id: uuid.UUID, start: float, end: float, vec: np.ndarray) -> None:
-    """Upsert one window's embedding. Old ids simply get overwritten."""
+def store_embedding(
+    db,
+    recording_id: uuid.UUID,
+    start: float,
+    end: float,
+    vec: np.ndarray,
+    commit: bool = True,
+) -> None:
+    """Upsert one window's embedding. Old ids simply get overwritten.
+
+    `commit=False` batches many inserts into one transaction -- the caller
+    commits once at the end instead of once per segment.
+    """
     if vec.shape != (EMBEDDING_DIM,):
         raise ValueError(f"embedding dim {vec.shape} != {EMBEDDING_DIM}")
     stmt = (
@@ -126,17 +149,26 @@ def store_embedding(db, recording_id: uuid.UUID, start: float, end: float, vec: 
         )
     )
     db.execute(stmt)
-    db.commit()
+    if commit:
+        db.commit()
 
 
-def ensure_embedding(db, recording_id: uuid.UUID, wav_path: str, start: float, end: float, embed_fn: EmbedFn) -> tuple[np.ndarray, bool]:
+def ensure_embedding(
+    db,
+    recording_id: uuid.UUID,
+    wav_path: str,
+    start: float,
+    end: float,
+    embed_fn: EmbedFn,
+    commit: bool = True,
+) -> tuple[np.ndarray, bool]:
     """Cached vector, or compute-and-cache it. Returns (vec, computed_now)."""
     cached = load_cached(db, recording_id, start, end)
     if cached is not None:
         return cached, False
 
     vec = np.asarray(embed_fn(wav_path, start, end), dtype=np.float64)
-    store_embedding(db, recording_id, start, end, vec)
+    store_embedding(db, recording_id, start, end, vec, commit=commit)
     return vec, True
 
 
