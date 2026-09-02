@@ -15,6 +15,7 @@
 
 import { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
+import { resume as resumeVolume } from '../audio/masterVolume';
 
 interface Props {
   audioUrl: string;
@@ -75,7 +76,13 @@ export default function Waveform({
     ws.on('audioprocess', (t) => handlers.current.onTime?.(t));
     // v7 renamed this from 'seek'. The old name silently never fired, which is
     // why clicking the waveform while paused used to leave the playhead behind.
-    ws.on('seeking', (t) => handlers.current.onTime?.(t));
+    ws.on('seeking', (t) => {
+      // A waveform click makes v7 seek and then play; when the boost chain is
+      // engaged the media element routes through a suspended AudioContext and
+      // plays silently. This runs inside the pointer gesture, so it resumes.
+      resumeVolume();
+      handlers.current.onTime?.(t);
+    });
     ws.on('play', () => handlers.current.onPlayingChange?.(true));
     ws.on('pause', () => handlers.current.onPlayingChange?.(false));
     ws.on('finish', () => handlers.current.onPlayingChange?.(false));

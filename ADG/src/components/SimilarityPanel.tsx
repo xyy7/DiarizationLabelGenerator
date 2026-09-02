@@ -19,7 +19,11 @@ import {
 } from 'antd';
 
 import { api, ApiError } from '../api/client';
-import { attach as attachVolume, resume as resumeVolume } from '../audio/masterVolume';
+import {
+  attach as attachVolume,
+  detach as detachVolume,
+  resume as resumeVolume,
+} from '../audio/masterVolume';
 import type { Segment, SimilarityResult, Speaker } from '../types';
 
 function fmt(t: number): string {
@@ -51,6 +55,16 @@ export default function SimilarityPanel({
   const [playingKey, setPlayingKey] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const startedRef = useRef<string | null>(null);
+
+  // The <audio> element lives as long as this component; register it with
+  // the master chain and forget it on unmount (it is destroyed with the
+  // drawer, and the volume module must not keep the corpse alive).
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    attachVolume(a);
+    return () => detachVolume(a);
+  }, []);
   // The parent's `save` callback is recreated whenever its own saving state
   // flips; deps containing it would re-run the identify effect in the middle
   // of a request, cancel it, and leave the spinner forever (the bug this

@@ -94,6 +94,14 @@ export function attach(el: HTMLMediaElement): void {
   }
 }
 
+/** Forget a dead element. Call from the owning component's cleanup: an
+ * unmounted <audio> must not keep a strong reference (nor a MediaElement
+ * source) live for the rest of the session. The graph connection itself is
+ * irreversible, so this only frees the bookkeeping. */
+export function detach(el: HTMLMediaElement): void {
+  known.delete(el);
+}
+
 /** Resume the graph. Must run inside a user-gesture handler; no-op when the
  * graph was never engaged. */
 export function resume(): void {

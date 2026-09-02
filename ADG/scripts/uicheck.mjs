@@ -157,9 +157,16 @@ if (target) {
 
   // J walks segments in time order and selects one. The selected block is the
   // one with a solid outline; `outline: none` is on all the others.
+  // (Same double-check as interact.mjs: React serialises the style as
+  // "outline: 2px solid rgb(...)", so a CSS substring selector can never match.)
   await page.keyboard.press('j');
   await page.waitForTimeout(900);
-  const selected = await page.locator('[data-lane] > div[style*="outline: rgb"]').count();
+  const selected = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-lane] > div')].filter((el) => {
+      const st = el.getAttribute('style') || '';
+      return st.includes('outline: rgb') || st.includes('outline: 2px');
+    }).length,
+  );
   console.log('selected after J:', selected);
   if (selected !== 1) note('interaction', `J selected ${selected} segments, expected 1`);
   await shot('04-after-step');

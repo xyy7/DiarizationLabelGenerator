@@ -138,6 +138,7 @@ export function reducer(state: EditState, action: Action): EditState {
 
     case 'REASSIGN': {
       const segments = ops.reassignSpeaker(state.segments, action.id, action.label);
+      if (segments === state.segments) return state;
       return commit(state, { segments });
     }
 

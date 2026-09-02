@@ -118,6 +118,11 @@ export function mergeWithNext(segments: Segment[], id: string): Segment[] {
 }
 
 export function reassignSpeaker(segments: Segment[], id: string, label: string): Segment[] {
+  // Same label is a no-op. The map below would rebuild the array, whose new
+  // identity the reducer reads as "changed" -- a pointless undo entry and a
+  // wasted autosave for a click that did nothing.
+  const target = segments.find((s) => s.id === id);
+  if (!target || target.speaker_label === label) return segments;
   return segments.map((s) => (s.id === id ? { ...s, speaker_label: label } : s));
 }
 

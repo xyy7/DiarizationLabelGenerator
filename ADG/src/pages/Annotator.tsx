@@ -141,6 +141,9 @@ export default function Annotator() {
   const seek = useCallback((t: number) => {
     const ws = wsRef.current;
     if (!ws || !state.duration) return;
+    // A manual seek moves the head off whatever was playing; the old segment
+    // end must not stop playback at what is now a stale boundary.
+    playUntil.current = null;
     ws.seekTo(Math.max(0, Math.min(1, t / state.duration)));
     setCurrentTime(t);
   }, [state.duration]);
@@ -149,8 +152,8 @@ export default function Annotator() {
     const seg = find(stateRef.current.segments, segId);
     const ws = wsRef.current;
     if (!seg || !ws) return;
-    playUntil.current = seg.end_sec;
     seek(seg.start_sec);
+    playUntil.current = seg.end_sec; // AFTER seek() cleared it
     resumeVolume(); // the master chain must run for any routed element
     ws.play();
   }, [seek]);
@@ -200,7 +203,17 @@ export default function Annotator() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return;
+      // Not just editable fields: a focused button or slider must keep the
+      // keys the browser gives it (Space/Enter activates, arrows move the
+      // slider). Menu items and dropdowns live in portals but the window
+      // handler still sees their keydowns -- without this, an open dropdown
+      // would have J/K suddenly re-annotating segments.
+      if (
+        el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.isContentEditable ||
+        el.closest('button, a[href], [role="slider"], [role="spinbutton"], [role="combobox"], [role="option"], [role="menuitem"], [role="listbox"]')
+      ) return;
 
       const s = stateRef.current;
       const sel = s.selectedId;

@@ -28,6 +28,21 @@ function run(state: EditState, ...actions: Action[]): EditState {
 beforeEach(() => resetIdCounter());
 
 describe('speaker identification edits', () => {
+  it('reassigning to the label it already has is a no-op', () => {
+    for (const action of [
+      { type: 'REASSIGN' as const, id: 'a', label: '0' },
+      { type: 'REASSIGN_MULTI' as const, id: 'a', labels: ['0'] },
+    ]) {
+      const changed = run(loaded(), action);
+      const undone = run(changed, { type: 'UNDO' });
+
+      expect(changed.dirty).toBe(false);
+      expect(changed.segments).toEqual(SEGMENTS);
+      expect(changed.notice).toBeNull();
+      expect(undone.segments).toEqual(SEGMENTS); // and nothing to undo either
+    }
+  });
+
   it('reassigns to several speakers as one undoable step', () => {
     const state = run(loaded(), { type: 'REASSIGN_MULTI', id: 'a', labels: ['1', '0'] });
 
