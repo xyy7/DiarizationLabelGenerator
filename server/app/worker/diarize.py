@@ -41,6 +41,24 @@ def _set_threads() -> None:
     log.info("torch threads: %d", torch.get_num_threads())
 
 
+def _batch_size() -> int:
+    """Batch size for segmentation and embedding passes.
+
+    The checkpoint ships batch_size=32, tuned for a GPU. On a CPU-only box it
+    peaks at ~6.6 GB RSS -- enough to trip the OOM killer on an 8 GB machine
+    shared with the API and DB (verified the hard way 2026-09-04: three OOM
+    kills before the config was trimmed to 4). On GPU, 4 would waste the card
+    (a 4090 D has 24 GB; 32 fits with a wide margin), so the default follows
+    the device and DIARIZEN_BATCH_SIZE overrides either.
+    """
+    override = os.environ.get("DIARIZEN_BATCH_SIZE")
+    if override:
+        return int(override)
+    import torch
+
+    return 32 if torch.cuda.is_available() else 4
+
+
 @lru_cache(maxsize=1)
 def get_pipeline():
     """Build the pipeline once. Heavy: expect tens of seconds."""
@@ -62,28 +80,24 @@ def get_pipeline():
     from diarizen.pipelines.inference import DiariZenPipeline
 
     log.info("loading DiariZen from %s", hub)
+    batch_size = _batch_size()
+    log.info("diarization batch size: %d", batch_size)
     pipeline = DiariZenPipeline(
         diarizen_hub=hub,
         embedding_model=str(embedding),
         rttm_out_dir=None,  # keep it in memory; we own serialization
-        # The checkpoint ships batch_size=32, tuned for a GPU. On a CPU it
-        # peaks at ~6.6 GB RSS -- enough to trip the OOM killer on an 8 GB
-        # box shared with the API, DB and GPU-less verify. Verified the hard
-        # way 2026-09-04: three OOM kills before the config was trimmed. 4
-        # costs minutes on a 60 s file but stays comfortably under the limit.
-        #
         # config_parse REPLACES whole sections (config["inference"]["args"] =
         # config_parse[...]), so every key the section would otherwise carry
         # must be reproduced verbatim from the checkpoint's config.toml or it
         # silently vanishes -- first run without segmentation_step would hang
-        # forever. Trade-off is only the batch size; both sections copied 1:1
-        # from diarizen-wavlm-large-s80-md/config.toml except that.
+        # forever. Both sections copied 1:1 from
+        # diarizen-wavlm-large-s80-md/config.toml except the batch size.
         config_parse={
             "inference": {
                 "args": {
                     "seg_duration": 16,
                     "segmentation_step": 0.1,
-                    "batch_size": 4,
+                    "batch_size": batch_size,
                     "apply_median_filtering": True,
                 }
             },

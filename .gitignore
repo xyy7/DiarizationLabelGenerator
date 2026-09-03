@@ -43,5 +43,8 @@ __pycache__/
 # Claude Code 本地设置（机器相关，不入库）
 .claude/settings.local.json
 
+# 远程部署辅助脚本（内含 SSH 密码，绝不入库）
+/scripts/remote_ssh.py
+
 # VSCode Counter 的统计报告
 .VSCodeCounter/

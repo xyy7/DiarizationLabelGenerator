@@ -92,6 +92,12 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d verify
 
 无 GPU 机器始终走 CPU（实测约 0.4× 实时，单次右键识别 1~3 秒级）。
 
+## 远程 GPU 部署（AutoDL）
+
+没有 docker 的 GPU 机器（AutoDL 容器）用裸机方式部署同一套服务：
+镜像自带 torch 走 CUDA、权重走 hf-mirror/ModelScope 快速下载、批大小自动跟随
+GPU、端口 6006 对外。详见 `docs/deploy-autodl.md`。
+
 ## 测试与验证
 
 ```bash
