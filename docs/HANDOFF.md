@@ -233,6 +233,31 @@ docker compose up -d worker
 domain nan/亚毫秒两项、verify 缓存容差一项），前端 **59**（新增"改判为同说话人无变化"用例）。
 服务端测试用 `--build` 重建 test 镜像后容器内全量；直接宿主 pytest 为 58 passed（verify 系 5 项需容器）。
 
+### 四期：worker 预标注部署与预标注流程调整（2026-09-04）
+
+一期遗留的「worker 镜像未构建」在本期闭环，并借机把预标注改成**用户手动触发**：
+
+- **worker 镜像从零构建**后连续暴露三个 DiariZen 缺失依赖并全部补齐：
+  `toml`（pipelines/inference.py）、`psutil`（utils.py，被 pyannote.audio.core.model
+  链式 import）、`accelerate`（utils.py 模块级）。三者 DiariZen pyproject 均未声明
+  （README 靠 `pip install -r requirements.txt` 绕过，而镜像只装 `pip install -e .`）。
+  Dockerfile 补丁已加注释说明为何 verify 之前没暴露这些缺失。
+- **OOM 根因与修复**：预标注反复失败实测为 Linux OOM killer 杀进程——
+  模型默认 `batch_size=32`（GPU 调优值），CPU 推理峰值 ~6.6GB，8GB 机器扛不住
+  （dmesg 三连确认）。`diarize.py` 用 `config_parse` 降到 batch=4，峰值 ~2.6GB；
+  note：config_parse 是**整段替换**，inference/clustering 两个 section 全部键值
+  须逐字复制，否则 seg_duration/segmentation_step/Fa/Fb 静默消失。
+- **预标注改手动**：列表页 uploaded 状态加「预标注」按钮（POST /diarize）。
+  批注：上传端点从不自动入队——一期的 `status="uploaded"` 就是等待用户，
+  此前"自动预标注"从未存在过。
+- **认领放宽**：`CLAIMABLE` 从 {ready, annotating, done} 扩到全部状态——
+  预标注为可选项。认领 running/queued 的录音时自动把对应 job 置为
+  failed("cancelled: claimed by annotator")，防 worker 干完覆盖人工标注
+  （原 VersionConflict 兜底保留，此处为第二道防线）。
+- 验证：1 分钟音频预标注 **2 分钟完成**（queued→succeeded，10 段/3 说话人）；
+  服务端 126 passed、前端 59 passed、tsc 零错误、vite build 通过；
+  claim 接口实测 ready→annotating，归认领人。
+
 ### 遗留（未关闭）
 
 - [ ] **用户环境“播放无声音”仍在调查**（应用链路已排除，方向：系统输出设备/

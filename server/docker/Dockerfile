@@ -65,7 +65,17 @@ RUN pip install --no-cache-dir \
 # produces a pipeline that cannot cluster. Both trees are editable installs,
 # so the source has to stay in the image at runtime.
 COPY DiariZen /opt/diarizen/DiariZen
-RUN pip install --no-cache-dir -e /opt/diarizen/DiariZen/pyannote-audio \
+# DiariZen's pyproject declares no runtime dependencies; its README installs
+# requirements.txt, which the image never does. The inference path needs all
+# three (trainer-only ones like librosa/torchinfo/h5py/thop are deliberately
+# NOT installed -- the worker only runs inference):
+#   toml       -- pipelines/inference.py:11
+#   psutil     -- diarizen/utils.py:14 (imported by pyannote.audio.core.model)
+#   accelerate -- diarizen/utils.py:17 (module-level; the whole utils import)
+# Fixed the hard way 2026-09-04: verify never imports these paths, so the
+# missing deps hid until the worker started for the first time.
+RUN pip install --no-cache-dir toml psutil accelerate==1.6.0 \
+ && pip install --no-cache-dir -e /opt/diarizen/DiariZen/pyannote-audio \
       -c /opt/diarizen/DiariZen/constraints.txt \
  && pip install --no-cache-dir -e /opt/diarizen/DiariZen
 

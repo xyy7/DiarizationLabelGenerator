@@ -66,6 +66,41 @@ def get_pipeline():
         diarizen_hub=hub,
         embedding_model=str(embedding),
         rttm_out_dir=None,  # keep it in memory; we own serialization
+        # The checkpoint ships batch_size=32, tuned for a GPU. On a CPU it
+        # peaks at ~6.6 GB RSS -- enough to trip the OOM killer on an 8 GB
+        # box shared with the API, DB and GPU-less verify. Verified the hard
+        # way 2026-09-04: three OOM kills before the config was trimmed. 4
+        # costs minutes on a 60 s file but stays comfortably under the limit.
+        #
+        # config_parse REPLACES whole sections (config["inference"]["args"] =
+        # config_parse[...]), so every key the section would otherwise carry
+        # must be reproduced verbatim from the checkpoint's config.toml or it
+        # silently vanishes -- first run without segmentation_step would hang
+        # forever. Trade-off is only the batch size; both sections copied 1:1
+        # from diarizen-wavlm-large-s80-md/config.toml except that.
+        config_parse={
+            "inference": {
+                "args": {
+                    "seg_duration": 16,
+                    "segmentation_step": 0.1,
+                    "batch_size": 4,
+                    "apply_median_filtering": True,
+                }
+            },
+            "clustering": {
+                "args": {
+                    "method": "VBxClustering",
+                    "min_speakers": 1,
+                    "max_speakers": 20,
+                    "ahc_criterion": "distance",
+                    "ahc_threshold": 0.6,
+                    "Fa": 0.07,
+                    "Fb": 0.8,
+                    "lda_dim": 128,
+                    "max_iters": 20,
+                }
+            },
+        },
     )
     log.info("DiariZen ready")
     return pipeline

@@ -21,8 +21,12 @@ from app.schemas import ClaimIn, JobOut, RecordingList, RecordingOut, UserOut
 
 router = APIRouter(prefix="/api/recordings", tags=["recordings"])
 
-# Statuses from which a human may take a file to work on.
-CLAIMABLE = {"ready", "annotating", "done"}
+# Statuses from which a human may take a file to work on. Every status is
+# allowed since 2026-09-04: pre-labelling is optional and must not block the
+# annotator -- claiming a pre-labelling file cancels its job (below), so the
+# human wins over the worker either way. `annotating` and `done` remain for
+# re-claiming a file (force or a stale claim); `ready` is the happy path.
+CLAIMABLE = {"uploaded", "queued", "running", "ready", "annotating", "done", "failed"}
 
 
 def _out(db, recording: Recording) -> RecordingOut:
@@ -183,6 +187,29 @@ def claim(
     recording.claimed_at = datetime.now(timezone.utc)
     recording.status = "annotating"
     recording.updated_at = datetime.now(timezone.utc)
+
+    # A pre-labelling job may be running right now. Marking it failed (a)
+    # frees the recording so the worker's heartbeat stops, and (b) keeps the
+    # job queue honest -- without this a claimed-while-running file would have
+    # the worker's later save rejected by VersionConflict, but only after the
+    # worker burned minutes of inference.
+    active = (
+        db.execute(
+            select(Job)
+            .where(
+                Job.recording_id == recording.id,
+                Job.status.in_(["queued", "running"]),
+            )
+            .order_by(Job.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if active is not None:
+        active.status = "failed"
+        active.error = "cancelled: claimed by annotator"
+        active.finished_at = datetime.now(timezone.utc)
+
     db.commit()
     db.refresh(recording)
     return _out(db, recording)

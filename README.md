@@ -1,4 +1,4 @@
-# DiarizationLabelGenerator
+   # DiarizationLabelGenerator
 
 说话人分离（speaker diarization）标注工具，**客户端–服务端的纠错式标注系统**。
 服务端跑 DiariZen 出预标注、并持有音频 / 标注 / 任务状态；浏览器只是视图。
@@ -32,12 +32,15 @@ docker compose up -d db api     # 起服务；前端由 api 直接托管
 ## 标注流程
 
 1. **上传音频**。首页「上传音频」，自动归一化为 16 kHz 单声道。
-2. **预标注**。两条路径：
-   - worker 构建完成后自动跑 DiariZen（见下）；
-   - 或本地跑出 RTTM 后在列表页「导入 RTTM」。
-3. **认领并标注**。点击「认领并标注」进入标注页：`J`/`K` 逐段走查试听，
+2. **预标注**。**不自动跑**——上传后停在「待预标注」，两条用户触发的路径：
+   - 点击列表页「**预标注**」按钮 → worker 认领跑 DiariZen（见下）；
+   - 或本地跑出 RTTM 后点击「导入 RTTM」。
+3. **认领并标注**。**任何状态都能认领**（预标注只是可选项）：
+   已预标注的会带着 DiariZen 片段进入标注页；未预标注的从空白开始标。
+   点击「认领并标注」进入标注页：`J`/`K` 逐段走查试听，
    改判（`1`–`9`）、拆分（`S`）、合并（`M`）、微调边界（`,`/`.`）、
    新建说话人（`N`）。自动保存（2 秒防抖）。
+   （认领一个正在预标注的文件会自动取消该预标注任务，人工优先。）
    工具栏「音量 %」按钮可调 **50%–500%**（超过 100% 为数字增益 + 限幅，
    同视频站点做法；默认 100% 走原生路径，不经过 WebAudio）。
 4. **声音识别辅助（可选，需 verify 容器）**。右键片段 →「设为稳定音频」
@@ -60,6 +63,11 @@ docker compose up -d worker
 
 未构建 worker 时用第 2 步的「导入 RTTM」路径即可，不影响主流程
 （本地跑 DiariZen 见 `diarizen-config/SETUP_CPU.md`）。
+
+**内存**：DiariZen 默认 batch_size=32（GPU 调优值），CPU 推理峰值 ~6.6GB，
+8GB 机器会被 Linux OOM 杀成「无限重试」。worker 已内置 batch=4（峰值 ~2.6GB），
+代价是 CPU 上更慢（约 2 倍实时）；内存 ≥16G 或上 GPU 时可改回 32
+（`server/app/worker/diarize.py` 的 `config_parse`）。
 
 ## 声音识别（verify，可选）
 

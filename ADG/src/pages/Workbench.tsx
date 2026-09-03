@@ -131,10 +131,34 @@ export default function Workbench() {
       width: 300,
       render: (_, r) => (
         <Space size={4} wrap>
+          {/* Only an not-yet-diarized file can be queued for pre-labelling;
+              the queued/running rows poll themselves and need no button. */}
+          {r.status === 'uploaded' && (
+            <Button
+              size="small"
+              onClick={async () => {
+                try {
+                  await api.diarize(r.id);
+                  message.success(`已入队，正在预标注 ${r.session_name}`);
+                  refresh();
+                } catch (e) {
+                  if (e instanceof ApiError && e.code === 'job_active') {
+                    message.info('这条录音已经在排队了');
+                  } else {
+                    message.error(e instanceof ApiError ? e.message : '预标注入队失败');
+                  }
+                }
+              }}
+            >
+              预标注
+            </Button>
+          )}
           <Button size="small" onClick={() => openImport(r)}>导入 RTTM</Button>
+          {/* Pre-labelling is optional since 2026-09-04: any status can be
+              claimed. The server cancels an in-flight job on claim, so a
+              human never races an ongoing diarization. */}
           <Button
             size="small"
-            disabled={!['ready', 'annotating', 'done'].includes(r.status)}
             onClick={async () => {
               try {
                 await api.claim(r.id);
