@@ -276,12 +276,31 @@ export default function Annotator() {
         case ']':
           if (sel) dispatch({ type: 'SET_BOUNDARY', id: sel, edge: 'end', time: currentTime });
           return;
+        // End-edge nudges. Note Shift+',' arrives as '<' and Shift+'.' as '>'
+        // (the key the shift produces, not the base key), so the huge step
+        // never fired until these variants were listed.
         case ',':
-        case '.': {
+        case '.':
+        case '<':
+        case '>': {
           if (!sel) return;
           e.preventDefault();
-          const delta = (e.key === ',' ? -1 : 1) * (e.shiftKey ? NUDGE * 10 : NUDGE);
+          const left = e.key === ',' || e.key === '<';
+          const delta = (left ? -1 : 1) * (e.shiftKey ? NUDGE * 10 : NUDGE);
           dispatch({ type: 'NUDGE', id: sel, edge: 'end', delta });
+          return;
+        }
+        // Start-edge nudges, mirroring the end pair: L moves the left edge
+        // earlier, ';' later; Shift+L / Shift+; produce 'L' / ':'.
+        case 'l':
+        case 'L':
+        case ';':
+        case ':': {
+          if (!sel) return;
+          e.preventDefault();
+          const left = e.key.toLowerCase() === 'l';
+          const delta = (left ? -1 : 1) * (e.shiftKey ? NUDGE * 10 : NUDGE);
+          dispatch({ type: 'NUDGE', id: sel, edge: 'start', delta });
           return;
         }
         case '-':

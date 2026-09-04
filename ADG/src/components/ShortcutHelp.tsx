@@ -50,6 +50,7 @@ export const GROUPS: { title: string; items: Shortcut[] }[] = [
     items: [
       { keys: ['['], what: '起点吸附到播放头', needsSelection: true },
       { keys: [']'], what: '终点吸附到播放头', needsSelection: true },
+      { keys: ['L', ';'], what: '起点微调 ∓10ms（⇧ 为 100ms）', needsSelection: true },
       { keys: [',', '.'], what: '终点微调 ∓10ms（⇧ 为 100ms）', needsSelection: true },
     ],
   },
@@ -104,7 +105,7 @@ export function ShortcutBar({ onOpen }: { onOpen: () => void }) {
       <span><Keys keys={['N']} /> 新说话人</span>
       <span><Keys keys={['S']} /> 拆分</span>
       <span><Keys keys={['M']} /> 合并</span>
-      <span><Keys keys={[',']} /><Keys keys={['.']} /> 微调</span>
+      <span><Keys keys={['L', ';']} /><Keys keys={[',', '.']} /> 微调</span>
       <a onClick={onOpen} style={{ fontSize: 12 }}>
         全部快捷键 <Keys keys={['?']} />
       </a>
