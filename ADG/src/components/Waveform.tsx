@@ -62,8 +62,20 @@ export default function Waveform({
       duration,
     });
 
+    // Debug aid: open the page with ?debug=playhead to see which event streams
+    // actually reach the app while the red line misbehaves.
+    const debug = new URLSearchParams(window.location.search).get('debug') === 'playhead';
+    const log = debug ? (...a: unknown[]) => console.log('[ph]', ...a) : () => {};
+    if (debug) {
+      // A crashed React tree freezes the red line while native audio keeps
+      // going -- the exact reported symptom -- so surface page errors here.
+      window.addEventListener('error', (e) => log('window-error', e.message, e.error?.stack?.split('\n')[1] ?? ''));
+      window.addEventListener('unhandledrejection', (e) => log('unhandled-rejection', e.reason));
+    }
+
     ws.on('ready', () => {
       readyRef.current = true;
+      log('ready');
       // Apply any zoom the user asked for while the audio was still decoding.
       if (pendingZoom.current > 0) ws.zoom(pendingZoom.current);
       handlers.current.onReady?.(ws);
@@ -72,20 +84,40 @@ export default function Waveform({
       // Surfaced rather than thrown: a failed decode should leave the rest of
       // the annotator usable.
       console.error('waveform failed to load', err);
+      log('error', String(err).slice(0, 120));
     });
-    ws.on('audioprocess', (t) => handlers.current.onTime?.(t));
+    // Load-phase probe (debug only): tells us at which event the pipeline
+    // stalls on machines where the wave never becomes ready.
+    if (debug) {
+      ws.on('load', (u) => log('load', String(u).slice(-40)));
+      ws.on('loading', (p) => log('loading', p));
+      ws.on('decode', (d) => log('decode', d));
+      ws.on('redraw', () => log('redraw'));
+    }
+
+    // The 16 ms timer that emits 'audioprocess' is gated behind wavesurfer's
+    // internal isSeeking signal. A seek whose 'seeked' never arrives (a
+    // waveform click whose byte range stalls or gets superseded mid-fetch --
+    // easy against a slow or remote audio endpoint) can leave that signal
+    // stuck true: the element keeps playing but 'audioprocess' stops forever,
+    // and the playhead freezes while the sound runs on. The media element's
+    // own 'timeupdate' is NOT gated, so it is the ground truth once the
+    // smooth path is broken -- mirror both; duplicates are idempotent.
+    ws.on('audioprocess', (t) => { log('audioprocess', t.toFixed(3)); handlers.current.onTime?.(t); });
+    ws.on('timeupdate', (t) => { log('timeupdate', t.toFixed(3)); handlers.current.onTime?.(t); });
+    ws.on('play', () => { log('play'); handlers.current.onPlayingChange?.(true); });
+    ws.on('pause', () => { log('pause'); handlers.current.onPlayingChange?.(false); });
+    ws.on('finish', () => { log('finish'); handlers.current.onPlayingChange?.(false); });
     // v7 renamed this from 'seek'. The old name silently never fired, which is
     // why clicking the waveform while paused used to leave the playhead behind.
     ws.on('seeking', (t) => {
-      // A waveform click makes v7 seek and then play; when the boost chain is
-      // engaged the media element routes through a suspended AudioContext and
-      // plays silently. This runs inside the pointer gesture, so it resumes.
+      // A waveform click seeks; when the boost chain is engaged the media
+      // element routes through a suspended AudioContext and plays silently.
+      // This runs inside the pointer gesture, so it resumes.
       resumeVolume();
+      log('seeking', t.toFixed(3));
       handlers.current.onTime?.(t);
     });
-    ws.on('play', () => handlers.current.onPlayingChange?.(true));
-    ws.on('pause', () => handlers.current.onPlayingChange?.(false));
-    ws.on('finish', () => handlers.current.onPlayingChange?.(false));
 
     wsRef.current = ws;
     return () => {

@@ -258,6 +258,29 @@ domain nan/亚毫秒两项、verify 缓存容差一项），前端 **59**（新�
   服务端 126 passed、前端 59 passed、tsc 零错误、vite build 通过；
   claim 接口实测 ready→annotating，归认领人。
 
+### 五期：播放红线冻结修复（2026-09-05）
+
+用户报「播放→暂停→重启后红线不动但声音在播」。定位与修复：
+
+- **根因在标注器的红线时钟**：Timeline 的红色播放头由 `currentTime` state 驱动，
+  而该 state 只订阅 wavesurfer 的 `audioprocess` 事件。wavesurfer v7 中
+  `audioprocess` 由 16ms 定时器发出，且**被内部 `isSeeking` 信号门控**
+  （dist/wavesurfer.js `initTimerEvents`：`if (!this.isSeeking())`）。一旦某次
+  seek（最典型：点击波形跳转，远程/慢速音频端点下字节范围响应超时，或 seek 被后
+  来的 seek 覆盖）的 `seeked` 事件不达，门控信号永远为 true——之后每次 tick 静默：
+  媒体元素照常发声（时间推进），红线从此冻结，**任何空格/走查操作都无法恢复**，
+  直到刷新页面。这正是「声音在播、红线不动」的形态。
+- **修法（ADG/src/components/Waveform.tsx）**：除 `audioprocess` 外同时订阅
+  `timeupdate`——媒体元素自身的 `timeupdate` 事件**不受 isSeeking 门控**
+  （`initPlayerEvents`），走寻不到「流畅路径」时用媒体的真实时间驱动红线；
+  重复事件对 `setCurrentTime` 幂等。另修正遗留注释「点波形会 seek 并播放」——
+  v7 点击只 seek，不播放。
+- 验证：tsc 零错误、前端 59 passed、vite build 通过；CDP 实测（headed Chrome + 真实
+  60s 音频 + Range 服务 + boost 150%）play/暂停/重放/点波形/相似度面板往返后播放，
+  红线均正常移动，无回归。复现脚本在 `tests/playhead/`（mock_server.py 支持
+  `ADG_MOCK_FAULTY=1` 模拟远端 Range 卡死，本地 Chrome 对此仍会补发 seeked——
+  卡死在真实网络条件才出现，故以机制分析 + 门控路径源码为准收口）。
+
 ### 遗留（未关闭）
 
 - [ ] **用户环境“播放无声音”仍在调查**（应用链路已排除，方向：系统输出设备/
