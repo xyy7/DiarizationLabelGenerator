@@ -2,6 +2,7 @@
 
 说话人分离（speaker diarization）标注工具，**客户端–服务端的纠错式标注系统**。
 服务端跑 DiariZen 出预标注、并持有音频 / 标注 / 任务状态；浏览器只是视图。
+组件关系、逻辑架构图与三种部署形态见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 工作流程：上传音频 → DiariZen 预标注（或导入外部 RTTM）→ 标注员逐段纠错 →
 标记完成 → 导出**标准 10 字段 RTTM**（可直接喂 `md-eval.pl` / `dscore` 算 DER）。
