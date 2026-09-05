@@ -13,10 +13,12 @@ import type WaveSurfer from 'wavesurfer.js';
 
 import Waveform from './Waveform';
 import type { Segment, Speaker } from '../types';
-import { byTime } from '../annotation/operations';
+import { byTime, MIN_DURATION } from '../annotation/operations';
 
 const LANE_HEIGHT = 44;
 const HANDLE_PX = 8;
+const RULER_HEIGHT = 22;
+const WAVE_HEIGHT = 96;
 
 interface Props {
   duration: number;
@@ -34,7 +36,14 @@ interface Props {
   onDragBoundary: (id: string, edge: 'start' | 'end', time: number) => void;
   onDragMove: (id: string, delta: number) => void;
   onDragEnd: () => void;
-  onCreate: (label: string, start: number, end: number) => void;
+  /** Move the red line. Every left-click in the timeline seeks. */
+  onSeek: (t: number) => void;
+  /**
+   * Pending time-range box (a drag on an empty lane), waiting for a number key
+   * to pick the speaker. Null once assigned, cancelled, or replaced.
+   */
+  marquee: { start: number; end: number } | null;
+  onMarquee: (range: { start: number; end: number } | null) => void;
   /** Right-click on a segment: open the per-segment menu at (x, y). */
   onSegmentContextMenu: (segment: Segment, x: number, y: number) => void;
 }
@@ -55,7 +64,8 @@ export default function Timeline(props: Props) {
   const {
     duration, pxPerSec, audioUrl, peaks, speakers, segments, selectedId,
     currentTime, onReady, onTime, onPlayingChange, onSelect,
-    onDragBoundary, onDragMove, onDragEnd, onCreate, onSegmentContextMenu,
+    onDragBoundary, onDragMove, onDragEnd, onSeek, marquee, onMarquee,
+    onSegmentContextMenu,
   } = props;
 
   const width = Math.max(1, duration * pxPerSec);
@@ -63,7 +73,7 @@ export default function Timeline(props: Props) {
   const drag = useRef<
     | { kind: 'move'; id: string; lastTime: number }
     | { kind: 'edge'; id: string; edge: 'start' | 'end' }
-    | { kind: 'create'; label: string; from: number; to: number }
+    | { kind: 'marquee'; from: number; to: number }
     | null
   >(null);
 
@@ -105,6 +115,7 @@ export default function Timeline(props: Props) {
       d.lastTime = t;
     } else {
       d.to = t;
+      onMarquee({ start: Math.min(d.from, t), end: Math.max(d.from, t) });
     }
   };
 
@@ -112,9 +123,10 @@ export default function Timeline(props: Props) {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    if (d.kind === 'create') {
+    if (d.kind === 'marquee') {
+      // A drag shorter than the minimum duration is a plain click: no box.
       const [a, b] = [d.from, d.to].sort((x, y) => x - y);
-      if (b - a > 0.02) onCreate(d.label, a, b);
+      if (b - a <= MIN_DURATION) onMarquee(null);
     } else {
       onDragEnd();
     }
@@ -127,10 +139,22 @@ export default function Timeline(props: Props) {
       onMouseMove={handleMouseMove}
       onMouseUp={finishDrag}
       onMouseLeave={finishDrag}
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        // Reaches here for ruler / waveform / lane gaps -- segments and the
+        // empty lane stop the event to handle the click themselves. Cancel any
+        // pending box, seek (every click moves the red line) and start a fresh
+        // marquee, so a drag on the waveform boxes just like on the lanes.
+        if (marquee) onMarquee(null);
+        const t = timeAt(e.clientX);
+        onSeek(t);
+        drag.current = { kind: 'marquee', from: t, to: t };
+        onMarquee({ start: t, end: t });
+      }}
     >
       <div style={{ width, position: 'relative' }}>
         {/* Ruler */}
-        <div style={{ height: 22, position: 'relative', borderBottom: '1px solid #eee' }}>
+        <div style={{ height: RULER_HEIGHT, position: 'relative', borderBottom: '1px solid #eee' }}>
           {ticks.map((t) => (
             <div
               key={t}
@@ -150,6 +174,7 @@ export default function Timeline(props: Props) {
           peaks={peaks}
           duration={duration}
           pxPerSec={pxPerSec}
+          height={WAVE_HEIGHT}
           onReady={onReady}
           onTime={onTime}
           onPlayingChange={onPlayingChange}
@@ -167,9 +192,12 @@ export default function Timeline(props: Props) {
             }}
             onMouseDown={(e) => {
               if (e.button !== 0 || e.target !== e.currentTarget) return;
+              e.stopPropagation(); // this click seeks itself; no scroller duplicate
               const t = timeAt(e.clientX);
-              drag.current = { kind: 'create', label: sp.label, from: t, to: t };
+              drag.current = { kind: 'marquee', from: t, to: t };
+              onMarquee({ start: t, end: t });
               onSelect(null);
+              onSeek(t);
             }}
           >
             {(byLane.get(sp.label) ?? []).map((s) => {
@@ -183,6 +211,8 @@ export default function Timeline(props: Props) {
                   onMouseDown={(e) => {
                     e.stopPropagation();
                     if (!s.id) return;
+                    onMarquee(null);
+                    onSeek(timeAt(e.clientX));
                     onSelect(s.id);
                     drag.current = { kind: 'move', id: s.id, lastTime: timeAt(e.clientX) };
                   }}
@@ -217,8 +247,11 @@ export default function Timeline(props: Props) {
                   <div
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      if (s.id) drag.current = { kind: 'edge', id: s.id, edge: 'start' };
-                      if (s.id) onSelect(s.id);
+                      if (!s.id) return;
+                      onMarquee(null);
+                      onSeek(timeAt(e.clientX));
+                      drag.current = { kind: 'edge', id: s.id, edge: 'start' };
+                      onSelect(s.id);
                     }}
                     style={{
                       position: 'absolute', left: 0, top: 0, bottom: 0,
@@ -228,8 +261,11 @@ export default function Timeline(props: Props) {
                   <div
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      if (s.id) drag.current = { kind: 'edge', id: s.id, edge: 'end' };
-                      if (s.id) onSelect(s.id);
+                      if (!s.id) return;
+                      onMarquee(null);
+                      onSeek(timeAt(e.clientX));
+                      drag.current = { kind: 'edge', id: s.id, edge: 'end' };
+                      onSelect(s.id);
                     }}
                     style={{
                       position: 'absolute', right: 0, top: 0, bottom: 0,
@@ -241,6 +277,32 @@ export default function Timeline(props: Props) {
             })}
           </div>
         ))}
+
+        {/* The pending selection box: a time range across the waveform and
+            every lane, waiting for a number key to pick the speaker. */}
+        {marquee && marquee.end > marquee.start ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: RULER_HEIGHT, bottom: 0,
+              left: marquee.start * pxPerSec,
+              width: (marquee.end - marquee.start) * pxPerSec,
+              background: 'rgba(22,119,255,0.10)',
+              border: '1px dashed #1677ff',
+              pointerEvents: 'none', zIndex: 3,
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute', left: 2, top: 2,
+                fontSize: 11, color: '#1677ff', background: 'rgba(255,255,255,0.92)',
+                padding: '0 4px', borderRadius: 2, whiteSpace: 'nowrap',
+              }}
+            >
+              1–9 指定说话人 · Del/Esc 取消 · {(marquee.end - marquee.start).toFixed(2)}s
+            </span>
+          </div>
+        ) : null}
 
         {/* A single playhead spanning every lane. */}
         <div

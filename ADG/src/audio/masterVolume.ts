@@ -58,15 +58,24 @@ function ensureChain(): AudioContext {
   return ctx;
 }
 
+// An element gets exactly one MediaElementAudioSourceNode for its lifetime
+// (the spec forbids creating a second one); once routed it stays in the graph
+// and its level is the shared master gain. The set must be consulted before
+// re-routing, or a slider drag -- dozens of setBoost calls -- would throw on
+// the second call and silently freeze the gain at the first value it saw.
+const routed = new WeakSet<HTMLMediaElement>();
+
 function route(el: HTMLMediaElement): void {
+  if (routed.has(el)) return;
   const context = ensureChain();
   try {
     const source = context.createMediaElementSource(el);
     source.connect(master!);
+    routed.add(el);
     el.volume = 1; // the gain chain is the single level control
   } catch {
-    // Some browser/state combination refuses the re-route (e.g. the element
-    // is already connected). Never leave the element muted because of it.
+    // Some browser/state combination refuses the re-route. Never leave the
+    // element muted because of it.
     el.volume = Math.min(1, boost);
   }
 }
@@ -78,9 +87,14 @@ function applyLevel(): void {
     // Already routed elements cannot be un-routed (the spec forbids it);
     // the graph itself becomes the level control, with gain ≤ 1.
     master.gain.value = boost;
+    return;
   } else {
     for (const el of known) el.volume = boost;
+    return;
   }
+  // boost > 1: the level always follows the slider, even mid-engagement --
+  // every extra route() call above is a no-op, so set the gain here.
+  if (master) master.gain.value = boost;
 }
 
 /** Register an element. Idempotent. At ≤100% this only sets nothing but the
@@ -118,6 +132,9 @@ export function setBoost(mult: number): void {
     Math.max(BOOST_MIN / 100, mult),
   );
   applyLevel();
+  // The slider drag is a user gesture: a context left suspended would route
+  // every element into SILENCE, so resume while the gesture is valid.
+  resume();
   try {
     localStorage.setItem(BOOST_KEY, String(boost));
   } catch {

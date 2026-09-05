@@ -103,7 +103,7 @@ interface Recording { id; session_name; duration_sec; status; claimed_by; annota
 |---|---|
 | `Workbench` | 状态列表（队列/认领人/版本），上传（流式哈希去重），导入 RTTM（文件名不符时要求确认），导出 zip |
 | `Annotator` | 装载（录音 + 标注 + 波形峰值），键盘分发，保存/冲突处理，说话人面板（改名、`N` 新建、合并到…），缩放 |
-| `Timeline` | 一根标尺 + 每说话人一条轨道 + 跨轨道播放头。拖轨道空白新建片段，拖片段移动，拖边缘改边界。宽度 = `duration × pxPerSec`，同一滚动容器 |
+| `Timeline` | 一根标尺 + 每说话人一条轨道 + 跨轨道播放头。任意点击 seek（红线）；拖波形/轨道空白框出时间框（覆盖波形与轨道），数字键指定说话人后新建，拖片段移动，拖边缘改边界。宽度 = `duration × pxPerSec`，同一滚动容器 |
 | `Waveform` | wavesurfer 7 封装；峰值由服务端计算（100 点/秒），避免前端下载整段波形 |
 | `ShortcutHelp` | `?` 打开的完整快捷键面板 + 常驻一行快捷条；`Tab` 特意不绑（留给键盘焦点） |
 

@@ -31,13 +31,14 @@ export const GROUPS: { title: string; items: Shortcut[] }[] = [
     items: [
       { keys: ['J', '↓'], what: '下一段并试听' },
       { keys: ['K', '↑'], what: '上一段并试听' },
-      { keys: ['Esc'], what: '取消选中' },
+      { keys: ['Esc'], what: '取消选中 / 取消框选' },
     ],
   },
   {
     title: '修改',
     items: [
-      { keys: ['1', '…', '9'], what: '把选中片段改判给第 N 位说话人', needsSelection: true },
+      { keys: ['拖拽波形/空白处'], what: '框出时间范围（蓝色虚框，覆盖波形与轨道），随后按 1–9 指定说话人新建' },
+      { keys: ['1', '…', '9'], what: '选中片段：改判给第 N 位说话人；有框选：按此说话人新建片段' },
       { keys: ['I'], what: '自动识别相似度（右键片段亦可）', needsSelection: true },
       { keys: ['N'], what: '新建说话人（选中时把这片段拆给他）' },
       { keys: ['S'], what: '在播放头处拆分', needsSelection: true },
@@ -101,7 +102,7 @@ export function ShortcutBar({ onOpen }: { onOpen: () => void }) {
     <div style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
       <span><Keys keys={['J']} /><Keys keys={['K']} /> 走查</span>
       <span><Keys keys={['空格']} /> 播放</span>
-      <span><Keys keys={['1', '…', '9']} /> 改判</span>
+      <span><Keys keys={['1', '…', '9']} /> 改判 / 框选新建</span>
       <span><Keys keys={['N']} /> 新说话人</span>
       <span><Keys keys={['S']} /> 拆分</span>
       <span><Keys keys={['M']} /> 合并</span>
@@ -138,7 +139,8 @@ export default function ShortcutHelp({
         ))}
       </div>
       <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
-        灰色的动作需要先选中一个片段（用 <Keys keys={['J']} /> 走查或直接点击）。
+        灰色的动作需要先选中一个片段（用 <Keys keys={['J']} /> 走查或直接点击）；
+        在波形或轨道空白处拖拽框出时间范围后，按 <Keys keys={['1', '…', '9']} /> 新建片段。
         在输入框里打字时所有快捷键都不生效。
       </div>
     </Modal>

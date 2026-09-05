@@ -15,7 +15,7 @@
 
 import { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { resume as resumeVolume } from '../audio/masterVolume';
+import { detach as detachVolume, resume as resumeVolume } from '../audio/masterVolume';
 
 interface Props {
   audioUrl: string;
@@ -123,6 +123,10 @@ export default function Waveform({
     return () => {
       wsRef.current = null;
       readyRef.current = false;
+      // Drop the bookkeeping for this element: a destroyed player must not
+      // stay in the gain chain's `known` set (StrictMode remounts create two
+      // players in dev; the stale one would otherwise be routed each drag).
+      detachVolume(ws.getMediaElement());
       ws.destroy();
     };
     // Deliberately not reacting to pxPerSec: zooming is a call, not a remount.

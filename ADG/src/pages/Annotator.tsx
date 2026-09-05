@@ -9,6 +9,11 @@
  *
  * Playback rate lost the number keys to that. It is a listening convenience;
  * reassignment is the job.
+ *
+ * A drag on empty lane space draws a time box instead of committing a label
+ * on the spot; the number keys assign that box a speaker afterwards (Del/Esc
+ * discards it), so a new segment is never tentatively parked under whoever's
+ * lane happened to be under the mouse.
  */
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -48,6 +53,8 @@ export default function Annotator() {
   const [helpOpen, setHelpOpen] = useState(false);
   // Right-click menu target and the identify panel's segment.
   const [menu, setMenu] = useState<{ segment: Segment; x: number; y: number } | null>(null);
+  // A drag on an empty lane: a time box awaiting a number key (1–9) or cancel.
+  const [marquee, setMarquee] = useState<{ start: number; end: number } | null>(null);
   const [panelSegId, setPanelSegId] = useState<string | null>(null);
   const [boostPct, setBoostPct] = useState(() => Math.round(getBoost() * 100));
 
@@ -167,6 +174,8 @@ export default function Annotator() {
   }, []);
 
   const step = useCallback((dir: 1 | -1) => {
+    // Walking the segments means the pending box is not what comes next.
+    setMarquee(null);
     const s = stateRef.current;
     const target = dir === 1
       ? nextSegment(s.segments, s.selectedId)
@@ -235,6 +244,7 @@ export default function Annotator() {
           return;
         case 'Escape':
           setHelpOpen(false);
+          if (marquee) { setMarquee(null); return; }
           dispatch({ type: 'SELECT', id: null });
           return;
         case ' ':
@@ -268,6 +278,8 @@ export default function Annotator() {
           return;
         case 'Delete':
         case 'Backspace':
+          // A pending box is discarded with the same key that deletes segments.
+          if (marquee) { e.preventDefault(); setMarquee(null); return; }
           if (sel) { e.preventDefault(); dispatch({ type: 'DELETE', id: sel }); }
           return;
         case '[':
@@ -323,15 +335,26 @@ export default function Annotator() {
       if (lower === 'm' && sel) { dispatch({ type: 'MERGE_NEXT', id: sel }); return; }
       if (lower === 'n') { e.preventDefault(); newSpeaker(); return; }
 
-      if (/^[1-9]$/.test(e.key) && sel) {
+      if (/^[1-9]$/.test(e.key)) {
         const speaker = s.speakers[Number(e.key) - 1];
-        if (speaker) dispatch({ type: 'REASSIGN', id: sel, label: speaker.label });
+        if (!speaker) return;
+        if (marquee) {
+          // The pending box becomes a segment for this speaker.
+          e.preventDefault();
+          dispatch({
+            type: 'CREATE', label: speaker.label,
+            start: marquee.start, end: marquee.end,
+          });
+          setMarquee(null);
+        } else if (sel) {
+          dispatch({ type: 'REASSIGN', id: sel, label: speaker.label });
+        }
       }
     };
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentTime, rate, save, step, playSegment, newSpeaker, openIdentify]);
+  }, [currentTime, rate, save, step, playSegment, newSpeaker, openIdentify, marquee]);
 
   // --- speaker actions ------------------------------------------------------
   const [mergeFrom, setMergeFrom] = useState<string | null>(null);
@@ -434,7 +457,9 @@ export default function Annotator() {
           dispatch({ type: 'SET_BOUNDARY', id: sid, edge, time: t, coalesce: true })}
         onDragMove={(sid, delta) => dispatch({ type: 'MOVE', id: sid, delta, coalesce: true })}
         onDragEnd={() => dispatch({ type: 'SELECT', id: stateRef.current.selectedId })}
-        onCreate={(label, start, end) => dispatch({ type: 'CREATE', label, start, end })}
+        onSeek={seek}
+        marquee={marquee}
+        onMarquee={setMarquee}
         onSegmentContextMenu={(segment, x, y) => setMenu({ segment, x, y })}
       />
 
