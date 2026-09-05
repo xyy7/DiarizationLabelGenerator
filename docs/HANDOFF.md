@@ -307,8 +307,13 @@ domain nan/亚毫秒两项、verify 缓存容差一项），前端 **59**（新�
       路由的元素播放无声）；2026-08-31 起波形 click/seek/空格/J/K/Enter 均会恢复，
       用户音量 >100% 复测通过、不再复现。系统输出设备/音量合成器排查线（spec §11）
       随之关闭——应用链路已排除，病因在应用侧。
-- [ ] **ModelScope 当日后端故障**，models 卷 eres2net 权重为本机副本注入；
-      MS 恢复后重跑 `docker compose --profile setup run --rm seed-models` 验证脚本路径。
+- [x] **ModelScope 当日后端故障——已恢复（2026-09-05 验证）**：via verify 容器直接调
+      `snapshot_download` 到临时目录拉取 `pretrained_eres2net_aug.ckpt`（221,210,095 B，
+      9 文件全成），**md5 与本机 models 卷副本完全一致**（`640d8a6a…`）——官方路径通、
+      本机副本字节级正确。注意：seed-models 脚本有"已存在即跳过"逻辑，重跑
+      `seed-models` 只验证文件在场；验证 MS 路径必须新拉 + md5 对比（本次方法）。
+      另：现存 `seed-models` 镜像未含 modelscope（旧构建），真正要用时先
+      `docker compose --profile setup build seed-models`。
 - [ ] 结论：`db+api` 最小部署不受影响；相似度依赖 verify，未启动时前端 503 文案提示。
 - [ ] 三数据库/测试计数口径：本文件第七节的“服务端 96/前端 43”为**一期**数字；本期见上表。
 
