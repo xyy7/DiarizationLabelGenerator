@@ -1,22 +1,41 @@
 """Database engine, session factory, and schema bootstrap.
 
-Schema is applied from ``schema.sql`` at startup rather than through Alembic.
-That is a deliberate, temporary choice: there is no production data yet, so a
-drop-and-recreate is free. Before the phase-2 schema change (subtitles) this
-must be replaced with real migrations — by then the database will hold hand-
-corrected annotations that cannot be reproduced.
+Schema is managed by Alembic (``server/migrations/``); ``init_schema()`` runs
+``upgrade head`` and is safe to call from every process at startup (api,
+worker, verify -- the containers start in any order). The baseline revision is
+an idempotent transcription of the old startup DDL (``schema.sql``), so every
+database state converges without touching data:
+
+- a fresh database lands with every object;
+- a pre-Alembic database re-runs the same ``IF NOT EXISTS`` statements it has
+  seen at every startup since its birth -- nothing is re-created, and the
+  hand-corrected annotations already in it are never touched;
+- a migrated database is a no-op at head.
+
+``tests/test_migrations.py`` guards the other direction: ``alembic check``
+fails when the database and ``app/models.py`` drift, so the next schema change
+is a migration revision, not hand DDL.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 
-SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+# Three containers call init_schema() at startup. The old schema.sql bootstrap
+# was safe under that race because every statement was IF NOT EXISTS; the one
+# thing that is not idempotent is alembic's version bookkeeping, so serialize
+# the whole migration on a session-level advisory lock (released when the
+# connection is closed, right after upgrade returns).
+_MIGRATION_LOCK_KEY = 475104292
 
 engine = create_engine(
     settings.database_url,
@@ -30,16 +49,36 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
-def init_schema() -> None:
-    """Apply the idempotent DDL. Safe to call from every process at startup.
+def alembic_config() -> Config:
+    """Alembic configuration targeting the database this app uses.
 
-    Uses exec_driver_sql rather than execute(text(...)): the file holds many
-    statements, and psycopg only accepts a multi-statement string through the
-    simple query protocol, which it selects when no parameters are bound.
+    Deliberately built without alembic.ini: script_location is derived from
+    the file tree (so it works from any working directory), and
+    migrations/env.py reads the URL from ``app.config`` -- the same env var
+    the application uses -- so the tool can never aim at a different database
+    than the app. The ini file at server/alembic.ini is only for hand-run
+    commands such as ``alembic revision --autogenerate``.
     """
-    ddl = SCHEMA_PATH.read_text(encoding="utf-8")
-    with engine.begin() as conn:
-        conn.exec_driver_sql(ddl)
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
+    return cfg
+
+
+def init_schema() -> None:
+    """Bring the database to head. Safe to call from every process at startup."""
+    # The advisory lock must be held by a session of our own: alembic uses a
+    # separate connection, and a transaction-scoped lock would be released by
+    # the first statement of that engine before the migration runs.
+    with engine.connect() as conn:
+        conn.exec_driver_sql(
+            f"SELECT pg_advisory_lock({_MIGRATION_LOCK_KEY})"
+        )
+        try:
+            command.upgrade(alembic_config(), "head")
+        finally:
+            conn.exec_driver_sql(
+                f"SELECT pg_advisory_unlock({_MIGRATION_LOCK_KEY})"
+            )
 
 
 def get_db():
@@ -51,4 +90,11 @@ def get_db():
         db.close()
 
 
-__all__ = ["engine", "SessionLocal", "Session", "init_schema", "get_db"]
+__all__ = [
+    "engine",
+    "SessionLocal",
+    "Session",
+    "alembic_config",
+    "init_schema",
+    "get_db",
+]

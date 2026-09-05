@@ -43,7 +43,7 @@
 
 理由：
 
-1. **已经就是这样表达的**。`segments` 无排他冲突约束（`schema.sql:78-81` 明确注释"overlap 不是脏数据"），DiariZen powerset 输出就允许两段同时间不同 speaker；RTTM 导出按 `(start, label)` 排序即天然多层重叠（`domain.py:144-158`），md-eval / dscore 均支持。
+1. **已经就是这样表达的**。`segments` 无排他冲突约束（`migrations/versions/0001_baseline.py` 中 segments 定义处明确注释"overlap 不是脏数据"），DiariZen powerset 输出就允许两段同时间不同 speaker；RTTM 导出按 `(start, label)` 排序即天然多层重叠（`domain.py:144-158`），md-eval / dscore 均支持。
 2. **部分重叠可以表达**（A [1.0,3.0]、B [1.5,2.5] 各自独立），一对多复合模型做不到。
 3. 改判动作语义简单：**一个 segment 替换成 N 个同时间范围的 segment（N=勾选数）**。原始 segment 的 id 保留给勾选集合中"恰好是原说话人"的那份，其余为新行——id 稳定，undo 照常。
 
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS segment_embeddings (
 
 ## 3. 数据库变更
 
-`schema.sql` 追加（幂等）：
+当时的 `schema.sql` 追加（幂等，现并入迁移 `0001_baseline`）：
 
 ```sql
 ALTER TABLE segments ADD COLUMN IF NOT EXISTS is_stable BOOLEAN NOT NULL DEFAULT FALSE;

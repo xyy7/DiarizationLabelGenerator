@@ -105,7 +105,7 @@
          回退才用项目名约定。
       核验：`pg_restore -l` 列出 33 个 TOC 条目；tar 内含 `audio/`、`exports/`。
       `backups/` 里旧空包 `data-20260829-020350.tar.gz` 已删，保留三个 db dump。
-- [ ] 第二阶段动 schema 前必须先引入 Alembic（届时库里已有昂贵的人工标注，不能靠重建）
+- [x] **第二阶段动 schema 前必须先引入 Alembic**（2026-09-05 完成，见九期）——届时库里已有昂贵的人工标注，不能靠重建
 
 ### P3 — 已知取舍，不急
 
@@ -311,3 +311,35 @@ domain nan/亚毫秒两项、verify 缓存容差一项），前端 **59**（新�
       MS 恢复后重跑 `docker compose --profile setup run --rm seed-models` 验证脚本路径。
 - [ ] 结论：`db+api` 最小部署不受影响；相似度依赖 verify，未启动时前端 503 文案提示。
 - [ ] 三数据库/测试计数口径：本文件第七节的“服务端 96/前端 43”为**一期**数字；本期见上表。
+
+### 九期：Alembic 迁移引入（2026-09-05）
+
+一期 P2 遗留「动 schema 前先引入 Alembic」在本期闭环（二期字幕是第一个受益者）。
+`server/app/schema.sql` 作废删除，**models.py 成为唯一事实来源**。
+
+- **骨架**：`server/alembic.ini` + `server/migrations/{env.py,script.py.mako,versions/0001_baseline.py}`；
+  env.py 的 URL 取自 `app.config.settings`（不写进 ini），CLI/容器/测试永不指向不同的库。
+  pyproject 加 `alembic>=1.13`。
+- **models.py 补齐镜像**：原是"schema.sql 优先 on drift"的次等镜像，现补上 5 个 Index
+  （含两个部分索引 `ix_recordings_claimed_by`、`uq_jobs_active`）、`sha256` 改 `CHAR(64)`、
+  全部服务端默认值（status/color/… 及 `gen_random_uuid()`）——metadata 与库做到逐项可比较。
+- **0001 基线 = schema.sql 的幂等转写**（全 `IF NOT EXISTS`），而非 stamp 方案：老库
+  （已有人工标注）在 `upgrade head` 下直接收敛——什么东西都不重建、不触碰数据；新库
+  一步建全。`init_schema()` 三态归并为一条 `command.upgrade(head)`，外包 PG 会话级
+  advisory lock（key 475104292）串行化三个容器同时启动的竞态（老 IF NOT EXISTS 引导
+  的并发安全语义必须保留）。
+- **验证**：新库 `adg_mig` upgrade+`alembic check` 零漂移；**真实 adg 库**
+  （6 用户/3 说话人/10 段人工标注）init_schema 后计数与迁移前快照**逐一相同**、
+  `alembic_version=0001_baseline`、check 干净；全量 `pytest -q` **128 passed**
+  （126 原有 + 新 `tests/test_migrations.py` 2 项：check 零漂移、init_schema 幂等）。
+- **顺手修掉一个过期测试**：`test_cannot_claim_before_pre_labels_exist` 自 e7ddc36
+  （认领放宽到 `uploaded`）起就断言旧契约 409，从那时起一直在挂——按新契约改为
+  `test_can_claim_before_pre_labels_exist`（200 + annotating）。
+- **构建顺手加固**（本次事故）：清华镜像间歇性对个别包返回空 simple page
+  （pip 报 `from versions: none`），build 层加 `PIP_EXTRA_INDEX_URL=阿里云` 兜底 + /srv
+  安装改 `--no-build-isolation`（setuptools/wheel 预装进层），不再依赖隔离环境的
+  二次拉取。**此次踩坑复刻了 HANDOFF 第五节「`docker build | tail` 掩盖退出码」**——
+  第一次构建实际失败却显示成功（管道退出码来自 tail）。
+- **今后改 schema 的流程**：改 `app/models.py` → `cd server && alembic revision
+  --autogenerate -m "..."` → 下一容器启动（或 `docker compose up -d`)升级 → 测试
+  `alembic check` 要求零漂移。**禁止手改数据库。**

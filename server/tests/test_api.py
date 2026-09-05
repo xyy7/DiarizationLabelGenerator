@@ -472,15 +472,23 @@ def test_import_refuses_while_someone_else_annotates(
 # Claiming and jobs
 # ---------------------------------------------------------------------------
 
-def test_cannot_claim_before_pre_labels_exist(client, wav_bytes):
+def test_can_claim_before_pre_labels_exist(client, wav_bytes):
+    """预先标注是可选步骤：uploaded（无预标注）即可直接认领开始纠错。
+
+    Renamed 2026-09-05: this test was the mirror image until the
+    "预标注改手动触发、任何状态可认领" change (e7ddc36) deliberately
+    inverted it -- pre-labels are no longer a gate. Every status is in
+    CLAIMABLE, so the old 409 is unreachable; pin the new contract here.
+    """
     rec = upload(client, wav_bytes).json()
 
     resp = client.post(
         f"/api/recordings/{rec['id']}/claim", json={}, headers=HEADERS
     )
 
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "not_claimable"
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "annotating"
+    assert resp.json()["claimed_by"] is not None
 
 
 def test_claim_blocks_others_then_completes(client, wav_bytes, db):

@@ -6,7 +6,8 @@ belongs in the ranked list. The embedding computation itself lives in
 ``engine.py``; tests inject a stub ``embed_fn``.
 
 Cache keying is by AUDIO CONTENT -- (recording_id, start_sec, end_sec) -- and
-never by segment id. The rationale lives in schema.sql where the table does.
+never by segment id. The rationale lives beside the table's definition in
+migrations/versions/0001_baseline.py.
 """
 
 from __future__ import annotations

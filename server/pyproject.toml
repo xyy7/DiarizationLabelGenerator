@@ -13,6 +13,10 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "sqlalchemy>=2.0",
+    # Schema is managed by Alembic: every container stamps/upgrades at startup
+    # (app.db.init_schema) instead of re-running idempotent DDL. The next
+    # schema change adds a revision, never a hand-edited database.
+    "alembic>=1.13",
     "psycopg[binary]>=3.1",
     "python-multipart>=0.0.9",
     "numpy>=1.26,<2",

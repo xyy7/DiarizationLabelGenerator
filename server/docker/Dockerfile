@@ -11,10 +11,14 @@ FROM python:3.10-slim AS base
 # use the default index.
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
+# Failover mirror. 2026-09-05: tsinghua intermittently answered with an empty
+# simple page (pip: "from versions: none") during an isolated build-env fetch;
+# with a working extra index pip falls through and the build survives.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_EXTRA_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PYTHONPATH=/srv
 
 # No apt layer at all. Decoding and resampling come from PyAV, whose manylinux
@@ -40,11 +44,23 @@ RUN pip install --no-cache-dir sqlalchemy python-multipart
 # Dependencies resolved from pyproject alone, against an empty package, so
 # editing application code does not invalidate the layer. The real app/ is
 # copied afterwards and imported via PYTHONPATH.
+#
+# setuptools/wheel are pinned into the image up front so the /srv install can
+# skip build isolation: the PEP 517 isolated env fetches them through the
+# mirror separately (the exact call that died on 2026-09-05, see the base
+# PIP_EXTRA_INDEX_URL comment), and here they land already.
 COPY server/pyproject.toml /srv/pyproject.toml
-RUN mkdir -p /srv/app && touch /srv/app/__init__.py \
- && pip install --no-cache-dir /srv
+RUN pip install --no-cache-dir "setuptools>=68" wheel \
+ && mkdir -p /srv/app && touch /srv/app/__init__.py \
+ && pip install --no-build-isolation --no-cache-dir /srv
 
 COPY server/app /srv/app
+
+# Alembic migrations. init_schema() bumps the database to head from every
+# container's startup (api/worker/verify all call it), so all three images
+# need the tree, not just api.
+COPY server/alembic.ini /srv/alembic.ini
+COPY server/migrations /srv/migrations
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
